@@ -1,0 +1,6 @@
+cpp/bin/
+python/__pycache__/
+python/**/__pycache__/
+python/.pytest_cache/
+python/*.egg-info/
+.DS_Store

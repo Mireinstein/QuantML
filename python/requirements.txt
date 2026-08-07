@@ -1,0 +1,6 @@
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.4
+pydantic>=2.7
+requests>=2.31
+pytest>=7.4
