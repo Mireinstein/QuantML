@@ -125,6 +125,26 @@ python -m quantiq.cli --use-llm       # score docs with a local LLM (requires Ol
   against live simulated market data — still no real capital.
 - Real historical market data source, swapped in behind the same
   `generate_synthetic_ohlcv` interface.
-- Expand the C++ engine with a lock-free ring buffer for market data
-  ingestion and multi-threaded matching.
 - Larger, real financial-document corpus for the RAG layer.
+
+## Skills roadmap (planned, not yet implemented)
+
+The order book and backtester above are real and tested; this is the next
+phase, aimed squarely at what market-making/prop-trading firms (Jane
+Street, Citadel, HRT, etc.) actually screen for:
+
+- **Concurrency & lock-free structures** — multithreaded order matching,
+  a lock-free ring buffer for market data ingestion (replacing the current
+  single-threaded benchmark loop).
+- **Performance engineering** — cache-line-aware data layout, SIMD where it
+  applies, `perf`-driven profiling with before/after latency numbers.
+- **Market data plumbing** — a tick-by-tick feed simulator with
+  UDP/multicast-style delivery, feeding the order book under realistic
+  load.
+- **Quantitative statistics** — time-series volatility modeling
+  (ARIMA/GARCH), Monte Carlo simulation for risk (VaR), proper walk-forward
+  backtesting instead of a single in-sample run.
+- **Risk management module** — position limits, real-time VaR, kill
+  switches on the strategy layer.
+- **C++/Python boundary** — pybind11 bindings so the Python backtester can
+  drive the real C++ order book instead of a separate simulated fill model.
