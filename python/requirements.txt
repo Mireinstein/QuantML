@@ -4,3 +4,4 @@ scikit-learn>=1.4
 pydantic>=2.7
 requests>=2.31
 pytest>=7.4
+pybind11>=2.12

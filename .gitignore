@@ -3,4 +3,6 @@ python/__pycache__/
 python/**/__pycache__/
 python/.pytest_cache/
 python/*.egg-info/
+python/build/
+python/*.so
 .DS_Store

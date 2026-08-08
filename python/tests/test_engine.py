@@ -4,7 +4,7 @@ import pytest
 
 from quantiq.data import generate_synthetic_ohlcv
 from quantiq.engine import run_backtest
-from quantiq.metrics import cagr, max_drawdown, sharpe_ratio, summarize
+from quantiq.metrics import cagr, max_drawdown, monte_carlo_var, sharpe_ratio, summarize
 from quantiq.strategies import MeanReversion, MovingAverageCrossover, SignalOverlayStrategy
 
 
@@ -66,3 +66,22 @@ def test_summarize_keys(prices):
     result = run_backtest(prices, MovingAverageCrossover())
     summary = summarize(result.equity_curve, result.returns)
     assert set(summary.keys()) == {"sharpe", "cagr", "max_drawdown", "win_rate", "final_equity"}
+
+
+def test_monte_carlo_var_keys_and_bounds(prices):
+    result = run_backtest(prices, MovingAverageCrossover())
+    mc = monte_carlo_var(result.returns, horizon_days=10, n_sims=2000, seed=1)
+    assert set(mc.keys()) == {"horizon_days", "confidence", "var", "cvar", "n_sims"}
+    assert mc["cvar"] >= mc["var"]  # expected shortfall is at least as bad as the VaR threshold
+
+
+def test_monte_carlo_var_deterministic_given_seed(prices):
+    result = run_backtest(prices, MovingAverageCrossover())
+    mc1 = monte_carlo_var(result.returns, n_sims=1000, seed=7)
+    mc2 = monte_carlo_var(result.returns, n_sims=1000, seed=7)
+    assert mc1 == mc2
+
+
+def test_monte_carlo_var_too_short_series_raises():
+    with pytest.raises(ValueError):
+        monte_carlo_var(pd.Series([0.01]))
