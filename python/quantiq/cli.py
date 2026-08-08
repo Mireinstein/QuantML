@@ -14,8 +14,10 @@ from .engine import run_backtest
 from .metrics import monte_carlo_var, summarize
 from .rag.retriever import load_corpus
 from .rag.signal import build_signal
+from .risk import RiskLimits, apply_risk_limits
 from .strategies import MovingAverageCrossover, SignalOverlayStrategy
 from .tick_data import generate_synthetic_ticks
+from .volatility import fit_garch, naive_rolling_vol
 from .walk_forward import run_walk_forward, summarize_walk_forward
 
 CORPUS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "sample_docs"
@@ -64,6 +66,31 @@ def main() -> None:
 
     mc = monte_carlo_var(overlay_result.returns, horizon_days=10, confidence=0.95)
     print(f"10-day 95% VaR/CVaR (RAG-overlay, {mc['n_sims']} bootstrap sims):", mc)
+
+    garch_returns = prices["close"].pct_change().dropna()
+    garch = fit_garch(garch_returns)
+    naive = naive_rolling_vol(garch_returns, window=20)
+    print(
+        f"\nGARCH(1,1) next-day vol forecast: {garch.forecast_vol:.4f}  "
+        f"vs naive 20d rolling vol: {naive:.4f}"
+    )
+
+    # apply_risk_limits needs returns aligned 1:1 with positions.index (the
+    # full price history), unlike garch_returns above which drops the
+    # leading NaN from pct_change() and so is one row shorter.
+    asset_returns = prices["close"].pct_change().fillna(0.0)
+    risk_limits = RiskLimits(max_position=1.0, max_drawdown=0.10)
+    risk_result = apply_risk_limits(baseline_result.positions, asset_returns, risk_limits)
+    if risk_result.breach_type:
+        print(
+            f"\nRisk limits (max_drawdown={risk_limits.max_drawdown:.0%}) on baseline strategy: "
+            f"BREACHED ({risk_result.breach_type}) on {risk_result.breach_date.date()}, "
+            f"trading halted for the rest of the run. "
+            f"Final equity with limits: {risk_result.equity_curve.iloc[-1]:.4f} "
+            f"vs unlimited: {baseline_result.equity_curve.iloc[-1]:.4f}"
+        )
+    else:
+        print(f"\nRisk limits (max_drawdown={risk_limits.max_drawdown:.0%}): not breached.")
 
 
 if __name__ == "__main__":
