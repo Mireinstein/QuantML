@@ -2,9 +2,7 @@
 
 A quant research platform combining a low-latency C++ limit order book with a
 Python backtesting engine and a retrieval-augmented (RAG) signal pipeline.
-Built to demonstrate the core skill areas quant development roles
-(market-making/HFT firms, systematic trading desks) actually test for:
-low-latency systems programming, concurrency, networking, market
+Core Skills:low-latency systems programming, concurrency, networking, market
 microstructure, quantitative statistics, and rigorous strategy backtesting —
 plus applied LLM/RAG engineering on top.
 
