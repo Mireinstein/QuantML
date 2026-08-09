@@ -261,6 +261,25 @@ async function predictMlSignal(ticker) {
   }
 }
 
+async function loadExplain(ticker) {
+  const container = document.getElementById("explain-chart");
+  container.innerHTML = `<div class="note">Computing permutation importance...</div>`;
+  try {
+    const d = await getJSON(`/api/ml-signal/explain?ticker=${encodeURIComponent(ticker)}`);
+    barChart(
+      container,
+      d.importances.map((fi) => fi.importance_mean),
+      { yfmt: (v) => v.toFixed(3) }
+    );
+    const labelsRow = document.createElement("div");
+    labelsRow.className = "stat-row";
+    d.importances.forEach((fi) => labelsRow.appendChild(statTile(fi.feature, fi.importance_mean.toFixed(3))));
+    container.appendChild(labelsRow);
+  } catch (e) {
+    container.innerHTML = `<div class="note">${e.message}</div>`;
+  }
+}
+
 async function runTrade(ticker, qtyPerUnit) {
   const resultRow = document.getElementById("trade-result");
   const confirmed = window.confirm(
@@ -331,10 +350,15 @@ document.addEventListener("DOMContentLoaded", () => {
   loadAutonomousActivity().catch(console.error);
   setInterval(() => loadAutonomousActivity().catch(console.error), 15000);
 
+  loadExplain("AAPL").catch(console.error);
+
   document.getElementById("ml-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const ticker = document.getElementById("ml-ticker").value.trim().toUpperCase();
-    if (ticker) predictMlSignal(ticker).catch(console.error);
+    if (ticker) {
+      predictMlSignal(ticker).catch(console.error);
+      loadExplain(ticker).catch(console.error);
+    }
   });
 
   document.getElementById("trade-form").addEventListener("submit", (e) => {

@@ -35,7 +35,8 @@ from .. import autonomous
 from ..data import generate_synthetic_ohlcv, load_real_ohlcv
 from ..engine import run_backtest
 from ..metrics import monte_carlo_var, summarize
-from ..ml.features import build_features
+from ..ml.explain import explain_model
+from ..ml.features import LABEL_COLUMN, build_features, build_features_and_labels
 from ..ml.registry import ModelNotTrainedError, load_best_model, load_metadata
 from ..paper_runner import rebalance
 from ..paper_trading import PaperTradingError
@@ -260,6 +261,34 @@ def run_trade(
         order = {"id": order.id, "symbol": order.symbol, "qty": order.qty, "side": order.side, "status": order.status}
     result["order"] = order
     return result
+
+
+@app.get("/api/ml-signal/explain")
+def explain_ml_signal(ticker: str = Query(default="AAPL"), period: str = Query(default="1y")) -> dict:
+    """Which features the CURRENTLY LIVE model actually relies on, measured
+    directly via permutation importance on real recent data -- not assumed
+    from feature names. See ml/explain.py for the method and why it's
+    model-agnostic (works the same for the sklearn models and the GRU)."""
+    try:
+        model = load_best_model()
+    except ModelNotTrainedError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    try:
+        prices = load_real_ohlcv(ticker, period=period)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    df = build_features_and_labels(prices)
+    if len(df) < 30:
+        raise HTTPException(status_code=422, detail=f"Not enough history for {ticker!r} to compute importances yet.")
+
+    ranked = explain_model(model, df, df[LABEL_COLUMN])
+    return {
+        "ticker": ticker,
+        "n_eval": len(df),
+        "importances": [{"feature": fi.feature, "importance_mean": fi.importance_mean, "importance_std": fi.importance_std} for fi in ranked],
+    }
 
 
 @app.get("/api/autonomous/activity")

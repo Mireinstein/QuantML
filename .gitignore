@@ -12,6 +12,7 @@ python/quantml/ml/mlruns/
 python/quantml/ml/eval_baseline.json
 python/quantml/ml/autonomous_log.jsonl
 python/quantml/ml/autonomous_state.json
+python/quantml/ml/autonomous_run.log
 python/quantml/finetune/adapter/
 python/quantml/finetune/checkpoints/
 python/quantml/finetune/model_metadata.json

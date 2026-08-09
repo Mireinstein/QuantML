@@ -73,6 +73,10 @@
       </form>
       <div id="ml-predict-result" class="stat-row"></div>
 
+      <h3 style="margin-top:20px">Why: feature importance</h3>
+      <p class="sub">Permutation importance on real recent data -- how much shuffling each feature degrades the live model's AUC. Model-agnostic, computed directly, not assumed.</p>
+      <div class="chart-wrap" id="explain-chart"></div>
+
       <h3 style="margin-top:20px">Run trade now</h3>
       <p class="sub">Submits a REAL order to a real Alpaca <strong>paper</strong> account (fake money, real broker, real live price) sized to the model's current prediction. Only works if this server has Alpaca paper API credentials configured (see README) -- the public Azure deployment deliberately does not.</p>
       <form class="ml-form" id="trade-form">

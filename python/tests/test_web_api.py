@@ -117,6 +117,25 @@ def _raise_not_trained(*args, **kwargs):
     raise ModelNotTrainedError("no model for this test")
 
 
+# --- Explainability ---------------------------------------------------
+
+
+def test_explain_returns_503_when_no_model_trained(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "load_best_model", _raise_not_trained)
+    r = client.get("/api/ml-signal/explain?ticker=AAPL")
+    assert r.status_code == 503
+
+
+def test_explain_rejects_a_ticker_with_no_history(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "load_best_model", lambda: object())
+    r = client.get("/api/ml-signal/explain?ticker=THIS-IS-NOT-A-REAL-TICKER-XYZ")
+    assert r.status_code in (422, 503)
+
+
 # --- On-demand trading + autonomous activity ------------------------------
 
 

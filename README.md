@@ -75,6 +75,19 @@ a tolerance versus the last recorded baseline (`eval_baseline.json`).
 recently selected, so `cli.py`, the dashboard, and `paper_runner.py` don't
 each need to know both model classes and pick the right one.
 
+**Explainability** (`explain.py`, `GET /api/ml-signal/explain`):
+permutation importance on real recent data -- for each feature, shuffle
+its values and measure how much the live model's held-out AUC drops. A
+feature the model genuinely relies on causes a real drop when scrambled;
+an unused one doesn't. Model-agnostic (only calls `predict_proba`, so it
+works identically for the sklearn models and the GRU) and needs no new
+dependency (scikit-learn already ships it) -- appropriate for a model
+this size (8 features), where SHAP/LIME would be more machinery than the
+question needs. Sanity-tested against a synthetic dataset where the label
+is deliberately derived from exactly one feature, asserting that feature
+ranks first (`tests/test_explain.py`) -- proof the ranking reflects real
+reliance, not noise.
+
 ### 2. `python/quantml/strategies.py::MLSignalStrategy`
 
 Same `Strategy` interface as the rule-based strategies below --
