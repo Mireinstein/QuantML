@@ -95,6 +95,84 @@ def test_run_dry_run_never_submits_orders_and_logs_every_cycle(tmp_path, monkeyp
     assert all("predicted_proba_up" in e for e in cycle_events)
 
 
+def test_run_advances_past_a_rejected_order_instead_of_looping_forever(tmp_path, monkeypatch):
+    """Regression test for a real production bug: Alpaca can reject a new
+    order (e.g. its wash-trade guard firing because a previous order for
+    the same symbol is still open/unfilled -- market orders submitted
+    outside real trading hours queue rather than fill immediately). Before
+    the fix, that PaperTradingError propagated up and aborted the cycle
+    BEFORE `state["cycle"]` was incremented, so the loop retried the exact
+    same day/order forever, 90s apart, indefinitely -- confirmed live: 132
+    consecutive identical failures over ~3.3 hours. The fix: a rejected
+    order is recorded in the log and the cycle still completes normally."""
+    prices = generate_synthetic_ohlcv(n_days=400, seed=5)
+
+    model_path = tmp_path / "model.joblib"
+    metadata_path = tmp_path / "model_metadata.json"
+    df = build_features_and_labels(prices)
+    split_idx = int(len(df) * 0.7)
+    test_start_date = df.index[split_idx]
+
+    model = SklearnSignalModel(build_logistic_baseline()).fit(
+        df[FEATURE_COLUMNS].iloc[:split_idx], df[LABEL_COLUMN].iloc[:split_idx]
+    )
+    model.save(model_path)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "model_type": "logistic_regression",
+                "model_file": "model.joblib",
+                "held_out_auc": 0.55,
+                "held_out_backtest": {"sharpe": 0.5},
+                "test_start_date": str(test_start_date.date()),
+                "data_source": "synthetic",
+            }
+        )
+    )
+
+    monkeypatch.setattr(autonomous, "load_real_ohlcv", lambda ticker, period: prices)
+    monkeypatch.setattr(autonomous, "LOG_PATH", tmp_path / "log.jsonl")
+    monkeypatch.setattr(autonomous, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(autonomous.eval_harness, "BASELINE_PATH", tmp_path / "eval_baseline.json")
+
+    import quantml.ml.registry as registry_module
+    from quantml.paper_trading import PaperTradingError, Position
+
+    monkeypatch.setattr(registry_module, "METADATA_PATH", metadata_path)
+    monkeypatch.setattr(registry_module, "HERE", tmp_path)
+
+    # A large existing position guarantees a non-zero delta every cycle
+    # (target_shares is bounded to +-qty_per_unit), so submit_market_order
+    # is always attempted -- and always rejected here, simulating the
+    # wash-trade scenario.
+    monkeypatch.setattr(
+        autonomous,
+        "get_position",
+        lambda ticker: Position(symbol=ticker, qty=100, avg_entry_price=100.0, market_value=10000.0, unrealized_pl=0.0),  # noqa: ARG005
+    )
+
+    def always_reject(*args, **kwargs):  # noqa: ARG001
+        raise PaperTradingError("Alpaca paper API returned 403: potential wash trade detected")
+
+    monkeypatch.setattr(autonomous, "submit_market_order", always_reject)
+
+    autonomous.run(ticker="TEST", qty_per_unit=10, cycle_seconds=0, retrain_every=100, max_cycles=5, dry_run=False)
+
+    activity = autonomous.recent_activity()
+    cycle_events = [a for a in activity if a["event"] == "cycle"]
+    error_events = [a for a in activity if a["event"] == "cycle_error"]
+
+    assert len(cycle_events) == 5  # all 5 cycles completed, none aborted into cycle_error
+    assert error_events == []
+    assert all(e["order"] == {"error": "Alpaca paper API returned 403: potential wash trade detected"} for e in cycle_events)
+    # The critical assertion: each cycle replayed a DIFFERENT day -- state
+    # advanced despite every order being rejected, instead of getting
+    # stuck replaying the same day forever.
+    replayed_days = [e["replayed_day"] for e in cycle_events]
+    assert len(set(replayed_days)) == 5
+
+
 def test_order_result_shape_matches_paper_trading_contract():
     """Guards the (id, symbol, qty, side, status) fields autonomous.py
     reads off an OrderResult when logging a submitted order."""

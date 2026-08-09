@@ -242,8 +242,23 @@ def run(
                 delta = target_shares - current_shares
                 if delta != 0:
                     side = "buy" if delta > 0 else "sell"
-                    order = submit_market_order(ticker, qty=abs(delta), side=side)
-                    order_result = {"id": order.id, "side": order.side, "qty": order.qty, "status": order.status}
+                    try:
+                        order = submit_market_order(ticker, qty=abs(delta), side=side)
+                        order_result = {"id": order.id, "side": order.side, "qty": order.qty, "status": order.status}
+                    except PaperTradingError as e:
+                        # A rejected order (e.g. Alpaca's wash-trade guard
+                        # firing because a PREVIOUS order for this symbol is
+                        # still open/unfilled -- market orders submitted
+                        # outside real trading hours queue instead of
+                        # filling immediately, and Alpaca won't accept an
+                        # opposite-side order while one is pending) must NOT
+                        # abort the whole cycle: `state["cycle"]` still needs
+                        # to advance below, or the loop gets stuck replaying
+                        # the exact same day/order forever, 90s apart,
+                        # indefinitely (this happened in production -- see
+                        # the "Honest bugs" note in README). Record the
+                        # failure and keep going.
+                        order_result = {"error": str(e)}
 
             drift = feature_drift(row.iloc[0], train_df)
             state["cycle"] += 1

@@ -399,6 +399,23 @@ LoRA run on a CPU in about 2 minutes, not a cherry-picked number.
   `cli.py` and `/api/ml-signal` report the model's *recorded* true
   held-out performance instead of ever re-scoring it against data that
   might overlap what it trained on.
+- **`autonomous.py` got stuck retrying the same rejected order forever**:
+  found live, overnight, by an automated check-in on the running process.
+  Alpaca rejected an order with a "potential wash trade" 403 (a previous
+  order for the same symbol was still open/unfilled -- market orders
+  submitted outside real trading hours queue instead of filling
+  immediately, and Alpaca won't accept an opposite-side order while one is
+  pending). That exception propagated up and aborted the cycle *before*
+  `state["cycle"]` was incremented, so the next cycle recomputed the exact
+  same day/order and got rejected again -- 132 consecutive identical
+  failures over roughly 3.3 hours before the check-in caught it, the loop
+  never crashing (so nothing external signaled a problem) but also never
+  making progress. Fixed by catching the order-submission failure
+  specifically: it's now recorded in that cycle's log entry and the loop
+  still advances, with a regression test
+  (`test_run_advances_past_a_rejected_order_instead_of_looping_forever`)
+  that reproduces the exact failure mode and asserts state advances past
+  it instead of repeating.
 
 ## Honest limitations
 
