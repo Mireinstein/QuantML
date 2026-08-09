@@ -269,13 +269,15 @@ az acr build --registry "$(terraform output -raw acr_login_server | cut -d. -f1)
 terraform apply   # succeeds now that the image exists
 ```
 
-Redeployed under the `quantml` names above after the project was renamed
-from QuantIQ -- the previous live URL (`quantiq-dashboard...`) no longer
+Live: **https://quantml-dashboard.salmonmeadow-1842758f.eastus.azurecontainerapps.io**
+-- redeployed under the `quantml` names above after the project was
+renamed from QuantIQ (the previous `quantiq-dashboard...` URL no longer
 resolves, since Azure resource names aren't renameable in place and the
-old resource group was torn down. New URL and end-to-end verification
-(real HTTP 200s, real trained model metadata from `/api/ml-signal`, a
-real live prediction against real AAPL data fetched from *inside* the
-running container) to follow once the redeploy completes.
+old resource group was torn down for the rename). Verified end-to-end,
+not just "resources exist": real HTTP 200s, the real trained model's
+metadata from `/api/ml-signal`, and a real live prediction against real
+AAPL data fetched from *inside* the running container via
+`/api/ml-signal/predict?ticker=AAPL`.
 
 Cost: the Container Registry (Basic SKU) is a flat ~$5/month; Container
 Apps' consumption plan scales to zero compute cost when idle, and its free
