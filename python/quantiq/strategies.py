@@ -3,10 +3,13 @@ signal) history to a target position in [-1, 1] (short .. flat .. long) for
 the next bar."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
+
+from .ml.features import build_features
 
 
 class Strategy:
@@ -61,3 +64,34 @@ class SignalOverlayStrategy(Strategy):
         sig = self.signal.reindex(prices.index).fillna(0.0).shift(1).fillna(0.0)
         combined = (1 - self.weight) * base_pos + self.weight * sig
         return combined.clip(-1.0, 1.0)
+
+
+class _ProbaModel(Protocol):
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray: ...
+
+
+@dataclass
+class MLSignalStrategy(Strategy):
+    """A strategy driven by a trained model (see ml/model.py) instead of a
+    hand-coded rule. The model predicts P(next day up) from ml/features.py's
+    technical features; that probability is mapped to a position in
+    [-1, 1] sized by the model's confidence (0.5 -> flat, 1.0 -> full long,
+    0.0 -> full short) rather than a hard threshold, so a barely-confident
+    prediction results in a small position, not the same full-size bet as
+    a highly confident one.
+
+    Same no-lookahead convention as every other strategy here: the model's
+    prediction for day t (made from features computable using only data
+    through day t) is shifted forward one day before being returned, so the
+    position actually HELD on day t was decided using information known
+    before day t opened.
+    """
+
+    model: Any = field(repr=False)  # duck-typed: needs predict_proba(features_df) -> np.ndarray
+    name: str = "ml_signal"
+
+    def positions(self, prices: pd.DataFrame) -> pd.Series:
+        features = build_features(prices)
+        proba_up = self.model.predict_proba(features)
+        signal = pd.Series(2 * proba_up - 1, index=features.index).clip(-1.0, 1.0)
+        return signal.reindex(prices.index).shift(1).fillna(0.0)

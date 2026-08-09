@@ -1,13 +1,16 @@
-"""Synthetic OHLCV price data for backtesting demos.
-
-This is randomly generated (geometric Brownian motion), NOT real market
-data. It exists so the backtester and RAG pipeline are fully runnable
-end-to-end without any external data provider or API key.
+"""OHLCV price data for backtesting: a synthetic generator (no external
+dependency, always available) and a real-market-data loader (Yahoo Finance
+via yfinance, no API key required). Both return the same column contract
+(open/high/low/close/volume, tz-naive DatetimeIndex), so every consumer --
+the backtester, walk-forward evaluation, VaR, GARCH, execution sim, and the
+web dashboard -- works identically against either without caring which one
+it's looking at.
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import yfinance as yf
 
 
 def generate_synthetic_ohlcv(
@@ -39,3 +42,24 @@ def generate_synthetic_ohlcv(
         {"open": open_, "high": high, "low": low, "close": close, "volume": volume},
         index=dates,
     )
+
+
+def load_real_ohlcv(ticker: str, period: str = "3y", interval: str = "1d") -> pd.DataFrame:
+    """Fetches REAL historical daily OHLCV for `ticker` from Yahoo Finance
+    via yfinance -- free, no account or API key needed. Returns the same
+    open/high/low/close/volume columns (lowercased) and a tz-naive
+    DatetimeIndex as generate_synthetic_ohlcv, so it's a drop-in
+    replacement anywhere that function is used.
+
+    `period`/`interval` follow yfinance's own conventions (e.g. period:
+    "1y", "3y", "max"; interval: "1d", "1wk", "1mo").
+    """
+    raw = yf.Ticker(ticker).history(period=period, interval=interval)
+    if raw.empty:
+        raise ValueError(f"yfinance returned no data for ticker {ticker!r} (period={period!r})")
+
+    df = raw.rename(columns=str.lower)[["open", "high", "low", "close", "volume"]].copy()
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+    df.index.name = None
+    return df

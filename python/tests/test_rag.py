@@ -42,3 +42,20 @@ def test_build_signal_ignores_other_tickers():
     docs = load_corpus(CORPUS_DIR)
     signal = build_signal(docs, tickers=["NOPE"])
     assert signal.empty
+
+
+def test_build_signal_finetuned_backend_falls_back_to_lexicon_when_untrained(monkeypatch):
+    """If no adapter has been trained yet, backend="finetuned" must degrade
+    to the lexicon scorer per-document, not raise -- same graceful-fallback
+    contract as the llm backend."""
+    import quantiq.finetune.model as finetune_model
+
+    def _raise(*args, **kwargs):
+        raise finetune_model.ModelNotTrainedError("no adapter for this test")
+
+    monkeypatch.setattr(finetune_model, "FineTunedSentimentScorer", _raise)
+
+    docs = load_corpus(CORPUS_DIR)
+    signal = build_signal(docs, tickers=["ACME"], backend="finetuned")
+    assert not signal.empty
+    assert (signal >= -1.0).all() and (signal <= 1.0).all()

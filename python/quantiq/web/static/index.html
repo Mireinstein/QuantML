@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuantIQ Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>QuantIQ Research Dashboard</h1>
+    <p>Backtests, risk, and a trained ML trading signal (scikit-learn + PyTorch), evaluated with no-lookahead walk-forward validation. Not a trading system -- no real capital, real market data only through explicit real-data/paper-trading modes.</p>
+  </header>
+
+  <main>
+    <section class="panel" id="panel-backtest">
+      <h2>Backtest: baseline vs. RAG sentiment overlay</h2>
+      <p class="sub">MA crossover (baseline) vs. MA crossover + TF-IDF/lexicon sentiment overlay (weight 0.4), same synthetic price series (seed=7).</p>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--accent)"></i>Baseline</span>
+        <span><i class="swatch" style="background:var(--accent2)"></i>RAG overlay</span>
+      </div>
+      <div class="chart-wrap" id="backtest-chart"></div>
+      <div id="backtest-stats-baseline" class="stat-row"></div>
+      <div id="backtest-stats-overlay" class="stat-row"></div>
+    </section>
+
+    <section class="panel" id="panel-walkforward">
+      <h2>Walk-forward evaluation</h2>
+      <p class="sub">Sequential out-of-sample folds, baseline MA crossover strategy.</p>
+      <div class="chart-wrap" id="wf-chart"></div>
+      <div id="wf-stats" class="stat-row"></div>
+    </section>
+
+    <section class="panel" id="panel-var">
+      <h2>Monte Carlo VaR / CVaR</h2>
+      <p class="sub">10-day, 95% confidence, historical bootstrap of the RAG-overlay strategy's realized daily returns.</p>
+      <div id="var-stats" class="stat-row"></div>
+    </section>
+
+    <section class="panel" id="panel-vol">
+      <h2>Volatility: GARCH(1,1) vs. naive rolling</h2>
+      <p class="sub">Conditional volatility over the full price history.</p>
+      <div class="chart-wrap" id="vol-chart"></div>
+      <div id="vol-stats" class="stat-row"></div>
+    </section>
+
+    <section class="panel" id="panel-risklimits">
+      <h2>Risk limits (drawdown kill switch)</h2>
+      <p class="sub">Baseline strategy, 10% max-drawdown limit vs. unlimited.</p>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--accent)"></i>Limited</span>
+        <span><i class="swatch" style="background:var(--accent2)"></i>Unlimited</span>
+      </div>
+      <div class="chart-wrap" id="risk-chart"></div>
+      <p class="note" id="risk-note"></p>
+    </section>
+
+    <section class="panel" id="panel-ml">
+      <h2>ML trading signal</h2>
+      <p class="sub">A trained model (scikit-learn baseline or a PyTorch GRU sequence model -- whichever won on held-out backtest Sharpe, see ml/train.py) predicting next-day price direction from technical features.</p>
+      <div id="ml-meta" class="stat-row"></div>
+      <div id="ml-stats" class="stat-row"></div>
+      <p class="note">Held-out performance shown above is the model's TRUE chronological out-of-sample result, recorded at training time -- never recomputed against data that might overlap what it trained on.</p>
+
+      <h3 style="margin-top:20px">Live prediction</h3>
+      <p class="sub">Ask the model what it thinks about a real ticker right now (genuine inference on today's real market data -- not a backtest).</p>
+      <form class="ml-form" id="ml-form">
+        <label>Ticker
+          <input type="text" id="ml-ticker" value="AAPL" required />
+        </label>
+        <button type="submit">Predict</button>
+      </form>
+      <div id="ml-predict-result" class="stat-row"></div>
+    </section>
+  </main>
+
+  <footer>QuantIQ &mdash; research/backtesting demo. No real capital is ever traded.</footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
