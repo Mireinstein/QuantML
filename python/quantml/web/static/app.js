@@ -16,6 +16,70 @@ function fmt(n, digits = 3) {
   return Number(n).toFixed(digits);
 }
 
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+// Company-name -> ticker autocomplete (e.g. typing "apple" offers AAPL),
+// backed by /api/tickers/search. Selecting a result just replaces the
+// input's value with the ticker symbol -- every consumer of these fields
+// (predict, explain, trade) already expects a plain ticker string, so no
+// other wiring needed.
+function attachTickerAutocomplete(inputEl, resultsEl) {
+  const runSearch = debounce(async (query) => {
+    if (!query.trim()) {
+      resultsEl.classList.remove("open");
+      resultsEl.innerHTML = "";
+      return;
+    }
+    try {
+      const d = await getJSON(`/api/tickers/search?q=${encodeURIComponent(query)}`);
+      if (!d.results.length) {
+        resultsEl.innerHTML = `<div class="ac-empty">No matches</div>`;
+      } else {
+        resultsEl.innerHTML = d.results
+          .map(
+            (r) =>
+              `<div class="ac-result" data-symbol="${escapeHtml(r.symbol)}"><span class="symbol">${escapeHtml(r.symbol)}</span><span class="name">${escapeHtml(r.name)}</span></div>`
+          )
+          .join("");
+      }
+      resultsEl.classList.add("open");
+    } catch (e) {
+      resultsEl.classList.remove("open");
+    }
+  }, 250);
+
+  inputEl.addEventListener("input", () => runSearch(inputEl.value));
+  inputEl.addEventListener("focus", () => {
+    if (resultsEl.innerHTML) resultsEl.classList.add("open");
+  });
+  // mousedown, not click: fires before the input's blur event, so
+  // selecting a result isn't swallowed by blur closing the dropdown first.
+  resultsEl.addEventListener("mousedown", (e) => {
+    const item = e.target.closest(".ac-result");
+    if (!item || !item.dataset.symbol) return;
+    inputEl.value = item.dataset.symbol;
+    resultsEl.classList.remove("open");
+    resultsEl.innerHTML = "";
+  });
+  document.addEventListener("click", (e) => {
+    if (e.target !== inputEl && !resultsEl.contains(e.target)) {
+      resultsEl.classList.remove("open");
+    }
+  });
+}
+
 function statTile(label, value, cls) {
   const div = document.createElement("div");
   div.className = "stat-tile" + (cls ? " " + cls : "");
@@ -505,4 +569,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const qty = parseInt(document.getElementById("trade-qty").value, 10) || 10;
     if (ticker) runTrade(ticker, qty).catch(console.error);
   });
+
+  attachTickerAutocomplete(document.getElementById("ml-ticker"), document.getElementById("ml-ticker-results"));
+  attachTickerAutocomplete(document.getElementById("trade-ticker"), document.getElementById("trade-ticker-results"));
 });

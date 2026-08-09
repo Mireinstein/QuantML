@@ -130,6 +130,15 @@ inference on today's real market data instead.
 OHLCV from Yahoo Finance via `yfinance`, normalized to the same column
 contract as the synthetic generator.
 
+`data.py::search_tickers(query)` (`GET /api/tickers/search?q=`) is a
+company-name -> ticker lookup, so the dashboard's ticker fields don't
+require already knowing that Apple is AAPL -- real Yahoo Finance search
+(`yfinance.Search`), not a hardcoded list, filtered to plain US-listed
+common stock (no `.DE`/`.NE`-suffixed foreign listings, no ETFs/options)
+since that's the only kind of ticker the rest of the app can actually
+use. The dashboard's ticker inputs are a small autocomplete widget
+(`attachTickerAutocomplete` in `app.js`) built on top of it.
+
 `paper_trading.py` is a REST client for Alpaca's paper trading API. The
 base URL is hard-coded to the paper endpoint, not configurable via env
 var or argument. Credentials load from a gitignored `python/.env`; every

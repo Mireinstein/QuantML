@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from quantml.data import load_real_ohlcv
+from quantml.data import load_real_ohlcv, search_tickers
 
 
 class _FakeTicker:
@@ -74,3 +74,37 @@ def test_load_real_ohlcv_is_a_drop_in_for_the_backtester(monkeypatch):
     prices = load_real_ohlcv("AAPL", period="1y")
     result = run_backtest(prices, MovingAverageCrossover())
     assert len(result.equity_curve) == 150
+
+
+class _FakeSearch:
+    def __init__(self, quotes: list[dict]):
+        self.quotes = quotes
+
+
+def _fake_yfinance_search(monkeypatch, quotes: list[dict]):
+    import quantml.data as data_module
+
+    monkeypatch.setattr(data_module.yf, "Search", lambda query, max_results=8: _FakeSearch(quotes))  # noqa: ARG005
+
+
+def test_search_tickers_filters_to_plain_us_equities(monkeypatch):
+    _fake_yfinance_search(
+        monkeypatch,
+        [
+            {"symbol": "AAPL", "quoteType": "EQUITY", "shortname": "Apple Inc."},
+            {"symbol": "APC.DE", "quoteType": "EQUITY", "shortname": "Apple Inc. (Germany)"},  # foreign listing
+            {"symbol": "AAPL251219C00250000", "quoteType": "OPTION", "shortname": "AAPL Option"},  # not a stock
+        ],
+    )
+    results = search_tickers("apple")
+    assert results == [{"symbol": "AAPL", "name": "Apple Inc."}]
+
+
+def test_search_tickers_falls_back_to_longname(monkeypatch):
+    _fake_yfinance_search(monkeypatch, [{"symbol": "MSFT", "quoteType": "EQUITY", "longname": "Microsoft Corporation"}])
+    results = search_tickers("microsoft")
+    assert results == [{"symbol": "MSFT", "name": "Microsoft Corporation"}]
+
+
+def test_search_tickers_returns_empty_list_for_blank_query():
+    assert search_tickers("   ") == []

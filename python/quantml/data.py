@@ -63,3 +63,23 @@ def load_real_ohlcv(ticker: str, period: str = "3y", interval: str = "1d") -> pd
         df.index = df.index.tz_localize(None)
     df.index.name = None
     return df
+
+
+def search_tickers(query: str, max_results: int = 8) -> list[dict]:
+    """Company-name -> ticker lookup via Yahoo Finance's real search index
+    (yfinance's `Search` wraps the same endpoint the yahoo finance website
+    itself uses) -- so a user can type "apple" instead of already knowing
+    it's AAPL. Filtered to plain US-listed common stock (no suffixed
+    tickers like AAPL.DE, no ETFs/indices/crypto/etc.), since this
+    project only ever backtests/trades a single unsuffixed US ticker
+    (see MLSignalStrategy, paper_runner.py) -- a foreign listing or a
+    fund would be a result the rest of the app can't actually use.
+    """
+    if not query.strip():
+        return []
+    results = yf.Search(query, max_results=max_results).quotes
+    return [
+        {"symbol": r["symbol"], "name": r.get("shortname") or r.get("longname") or r["symbol"]}
+        for r in results
+        if r.get("quoteType") == "EQUITY" and "." not in r.get("symbol", ".")
+    ]

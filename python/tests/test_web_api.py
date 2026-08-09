@@ -25,6 +25,24 @@ def client():
         yield c
 
 
+# --- Ticker search ---------------------------------------------------------
+
+
+def test_ticker_search_returns_empty_for_blank_query(client):
+    r = client.get("/api/tickers/search?q=")
+    assert r.status_code == 200
+    assert r.json() == {"results": []}
+
+
+def test_ticker_search_shape(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "search_tickers", lambda q: [{"symbol": "AAPL", "name": "Apple Inc."}])
+    r = client.get("/api/tickers/search?q=apple")
+    assert r.status_code == 200
+    assert r.json() == {"results": [{"symbol": "AAPL", "name": "Apple Inc."}]}
+
+
 # --- Dashboard endpoints: shape + sanity -----------------------------------
 
 

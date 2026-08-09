@@ -66,8 +66,11 @@
       <h3 style="margin-top:20px">Live prediction</h3>
       <p class="sub">Ask the model what it thinks about a real ticker right now (genuine inference on today's real market data -- not a backtest).</p>
       <form class="ml-form" id="ml-form">
-        <label>Ticker
-          <input type="text" id="ml-ticker" value="AAPL" required />
+        <label>Company or ticker
+          <div class="ticker-autocomplete">
+            <input type="text" id="ml-ticker" value="AAPL" placeholder="e.g. Apple or AAPL" autocomplete="off" required />
+            <div class="ac-results" id="ml-ticker-results"></div>
+          </div>
         </label>
         <button type="submit">Predict</button>
       </form>
@@ -80,8 +83,11 @@
       <h3 style="margin-top:20px">Run trade now</h3>
       <p class="sub">Submits a REAL order to a real Alpaca <strong>paper</strong> account (fake money, real broker, real live price) sized to the model's current prediction. Only works if this server has Alpaca paper API credentials configured (see README) -- the public Azure deployment deliberately does not.</p>
       <form class="ml-form" id="trade-form">
-        <label>Ticker
-          <input type="text" id="trade-ticker" value="AAPL" required />
+        <label>Company or ticker
+          <div class="ticker-autocomplete">
+            <input type="text" id="trade-ticker" value="AAPL" placeholder="e.g. Apple or AAPL" autocomplete="off" required />
+            <div class="ac-results" id="trade-ticker-results"></div>
+          </div>
         </label>
         <label>Shares per full [-1,1] position
           <input type="number" id="trade-qty" value="10" min="1" max="1000" />

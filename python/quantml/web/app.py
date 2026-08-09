@@ -36,7 +36,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 from .. import autonomous
-from ..data import generate_synthetic_ohlcv, load_real_ohlcv
+from ..data import generate_synthetic_ohlcv, load_real_ohlcv, search_tickers
 from ..engine import run_backtest
 from ..metrics import monte_carlo_var, summarize
 from ..ml.explain import explain_model
@@ -135,6 +135,16 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(str(STATIC_DIR / "index.html"))
+
+
+@app.get("/api/tickers/search")
+def get_ticker_search(q: str = Query(default="", max_length=64)) -> dict:
+    """Company-name -> ticker lookup (e.g. "apple" -> AAPL) so the
+    dashboard's ticker fields don't require already knowing the symbol.
+    Real Yahoo Finance search, not a hardcoded list -- see
+    data.py::search_tickers for why results are filtered to plain
+    US-listed stock."""
+    return {"results": search_tickers(q)}
 
 
 # --- Dashboard endpoints (read-only, recompute-every-call) -----------------

@@ -189,6 +189,52 @@ button.secondary {
   text-transform: uppercase;
 }
 
+.ticker-autocomplete {
+  position: relative;
+}
+.ticker-autocomplete input {
+  width: 220px;
+}
+.ac-results {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  text-transform: none;
+}
+.ac-results.open { display: block; }
+.ac-result {
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text);
+  border-bottom: 1px solid var(--panel-border);
+}
+.ac-result:last-child { border-bottom: none; }
+.ac-result:hover, .ac-result.active {
+  background: #1d2330;
+}
+.ac-result .symbol {
+  font-weight: 700;
+  color: var(--accent);
+  margin-right: 0.5rem;
+}
+.ac-result .name {
+  color: var(--muted);
+}
+.ac-empty {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 footer {
   text-align: center;
   color: var(--muted);
