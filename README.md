@@ -217,15 +217,14 @@ real Alpaca paper account, not just mocked in tests.
 ## Deployment
 
 **Docker** (`python/Dockerfile`): containerizes the FastAPI dashboard.
-Trains a model on first boot if none is baked into the image (kept out via
-`.dockerignore`, so every image starts from a known-fresh artifact rather
-than whatever happened to be on the host when it was built) -- same
-train-if-missing pattern as TenantIQ's `ml/Dockerfile`. Verified by
-simulating the exact container entrypoint locally (Docker itself wasn't
-available in the environment this was built in): copying the source tree
-minus the `.dockerignore`'d artifacts into a clean directory, running the
-same `test -f ... || python3 -m quantml.ml.train; exec uvicorn ...` command
-the `CMD` executes, and confirming it trains fresh then serves correctly.
+Trains the model at image *build* time (`RUN python3 -m quantml.ml.train`),
+not at container startup -- an earlier version trained on first boot
+(mirroring TenantIQ's `ml/Dockerfile`, whose lightweight sklearn model is
+cheap enough for that to work fine), but this project's training step
+loads PyTorch + transformers + scikit-learn together and needs more memory
+than a small serving container should carry at runtime (see the real bug
+below). Every image therefore starts from a known-fresh, immutable model
+artifact baked in at build time, not whatever happened to be on the host.
 
 ```bash
 docker build -t quantml-dashboard python/
@@ -270,11 +269,13 @@ az acr build --registry "$(terraform output -raw acr_login_server | cut -d. -f1)
 terraform apply   # succeeds now that the image exists
 ```
 
-Live: **https://quantml-dashboard.redcliff-1024218d.eastus.azurecontainerapps.io**
--- verified end-to-end, not just "resources exist": real HTTP 200s, the
-real trained model's metadata from `/api/ml-signal`, and a real live
-prediction against real AAPL data fetched from *inside* the running
-container via `/api/ml-signal/predict?ticker=AAPL`.
+Redeployed under the `quantml` names above after the project was renamed
+from QuantIQ -- the previous live URL (`quantiq-dashboard...`) no longer
+resolves, since Azure resource names aren't renameable in place and the
+old resource group was torn down. New URL and end-to-end verification
+(real HTTP 200s, real trained model metadata from `/api/ml-signal`, a
+real live prediction against real AAPL data fetched from *inside* the
+running container) to follow once the redeploy completes.
 
 Cost: the Container Registry (Basic SKU) is a flat ~$5/month; Container
 Apps' consumption plan scales to zero compute cost when idle, and its free
