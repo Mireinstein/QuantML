@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from quantiq.risk import RiskLimits, apply_risk_limits
+from quantml.risk import RiskLimits, apply_risk_limits
 
 
 def make_series(values, n=10):

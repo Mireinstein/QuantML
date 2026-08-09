@@ -10,9 +10,9 @@
 # a managed identity would be the better practice with a more privileged
 # (User Access Administrator) deploy principal.
 resource "azurerm_container_registry" "acr" {
-  name                = "quantiqacr${random_string.suffix.result}"
-  resource_group_name = azurerm_resource_group.quantiq.name
-  location            = azurerm_resource_group.quantiq.location
+  name                = "quantmlacr${random_string.suffix.result}"
+  resource_group_name = azurerm_resource_group.quantml.name
+  location            = azurerm_resource_group.quantml.location
   sku                 = "Basic"
   admin_enabled       = true
 }

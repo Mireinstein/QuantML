@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from quantiq.data import generate_synthetic_ohlcv
-from quantiq.ml.features import FEATURE_COLUMNS, LABEL_COLUMN, build_features_and_labels
-from quantiq.ml.model import (
+from quantml.data import generate_synthetic_ohlcv
+from quantml.ml.features import FEATURE_COLUMNS, LABEL_COLUMN, build_features_and_labels
+from quantml.ml.model import (
     SklearnSignalModel,
     TorchSignalModel,
     build_gradient_boosting,

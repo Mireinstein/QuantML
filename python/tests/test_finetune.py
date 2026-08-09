@@ -1,7 +1,7 @@
 import pytest
 
-from quantiq.finetune.data import LABEL_NAMES, load_sentiment_data
-from quantiq.finetune.eval_harness import (
+from quantml.finetune.data import LABEL_NAMES, load_sentiment_data
+from quantml.finetune.eval_harness import (
     MAX_ACCURACY_REGRESSION,
     MAX_F1_REGRESSION,
     MIN_ACCURACY,
@@ -9,7 +9,7 @@ from quantiq.finetune.eval_harness import (
     EvalResult,
     check,
 )
-from quantiq.finetune.model import FineTunedSentimentScorer, ModelNotTrainedError
+from quantml.finetune.model import FineTunedSentimentScorer, ModelNotTrainedError
 
 
 def test_load_sentiment_data_respects_subsample_cap():
@@ -33,7 +33,7 @@ def scorer():
     try:
         return FineTunedSentimentScorer()
     except ModelNotTrainedError:
-        pytest.skip("No fine-tuned adapter present -- run `python -m quantiq.finetune.train` first.")
+        pytest.skip("No fine-tuned adapter present -- run `python -m quantml.finetune.train` first.")
 
 
 def test_predict_returns_a_valid_label_and_probability_simplex(scorer):

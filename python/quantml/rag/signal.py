@@ -9,7 +9,7 @@ Three backends:
     document. Falls back to the lexicon backend per-document if the
     endpoint is unreachable.
   - finetuned: a small DistilBERT+LoRA classifier actually fine-tuned on
-    real labeled financial sentiment data (see quantiq/finetune/) -- no
+    real labeled financial sentiment data (see quantml/finetune/) -- no
     network call, runs locally, and unlike the other two backends its
     score comes from learned weights, not a hand-written lexicon or a
     prompted general-purpose model. Falls back to the lexicon backend if

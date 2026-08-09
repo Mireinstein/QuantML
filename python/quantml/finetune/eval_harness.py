@@ -5,8 +5,8 @@ adapter against a FRESH slice of the real validation set never scored
 during training-time reporting, and fails if accuracy/F1 drop below fixed
 floors or regress past a tolerance versus the last recorded baseline.
 
-    python -m quantiq.finetune.eval_harness
-    python -m quantiq.finetune.eval_harness --update-baseline
+    python -m quantml.finetune.eval_harness
+    python -m quantml.finetune.eval_harness --update-baseline
 """
 from __future__ import annotations
 

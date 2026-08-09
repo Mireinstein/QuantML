@@ -1,4 +1,4 @@
-# QuantIQ dashboard -- Azure deployment.
+# QuantML dashboard -- Azure deployment.
 #
 # The azurerm provider reads ARM_CLIENT_ID / ARM_CLIENT_SECRET /
 # ARM_TENANT_ID / ARM_SUBSCRIPTION_ID from the environment automatically
@@ -22,13 +22,13 @@ provider "azurerm" {
   features {}
 }
 
-resource "azurerm_resource_group" "quantiq" {
-  name     = "quantiq-rg"
+resource "azurerm_resource_group" "quantml" {
+  name     = "quantml-rg"
   location = var.location
 }
 
 # Container registry names must be globally unique across all of Azure --
-# this suffix avoids a name collision with someone else's "quantiqacr".
+# this suffix avoids a name collision with someone else's "quantmlacr".
 resource "random_string" "suffix" {
   length  = 6
   special = false

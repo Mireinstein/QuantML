@@ -3,24 +3,24 @@
 # free monthly allowance (180K vCPU-seconds / 360K GiB-seconds) covers a
 # low-traffic demo dashboard comfortably.
 resource "azurerm_log_analytics_workspace" "logs" {
-  name                = "quantiq-logs"
-  resource_group_name = azurerm_resource_group.quantiq.name
-  location            = azurerm_resource_group.quantiq.location
+  name                = "quantml-logs"
+  resource_group_name = azurerm_resource_group.quantml.name
+  location            = azurerm_resource_group.quantml.location
   sku                 = "PerGB2018"
   retention_in_days   = 30
 }
 
 resource "azurerm_container_app_environment" "env" {
-  name                       = "quantiq-env"
-  resource_group_name        = azurerm_resource_group.quantiq.name
-  location                   = azurerm_resource_group.quantiq.location
+  name                       = "quantml-env"
+  resource_group_name        = azurerm_resource_group.quantml.name
+  location                   = azurerm_resource_group.quantml.location
   log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
 }
 
 resource "azurerm_container_app" "dashboard" {
-  name                         = "quantiq-dashboard"
+  name                         = "quantml-dashboard"
   container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.quantiq.name
+  resource_group_name          = azurerm_resource_group.quantml.name
   revision_mode                = "Single"
 
   secret {
@@ -36,8 +36,8 @@ resource "azurerm_container_app" "dashboard" {
 
   template {
     container {
-      name   = "quantiq-dashboard"
-      image  = "${azurerm_container_registry.acr.login_server}/quantiq-dashboard:${var.image_tag}"
+      name   = "quantml-dashboard"
+      image  = "${azurerm_container_registry.acr.login_server}/quantml-dashboard:${var.image_tag}"
       cpu    = 0.25
       memory = "0.5Gi"
     }

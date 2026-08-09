@@ -1,4 +1,4 @@
-# QuantIQ
+# QuantML
 
 An applied ML platform for systematic trading: a feature-engineering +
 model-training pipeline (scikit-learn and a PyTorch GRU sequence model),
@@ -22,7 +22,7 @@ about real-market performance.
 
 ## Components
 
-### 1. `python/quantiq/ml/` — the ML pipeline
+### 1. `python/quantml/ml/` — the ML pipeline
 
 **Features** (`features.py`): technical indicators computed from OHLCV --
 1/5/10-day returns, 20-day rolling volatility, a 10/50-day moving-average
@@ -45,7 +45,7 @@ interface so nothing downstream needs to know which kind it's holding:
   window get a neutral 0.5 rather than crashing or being dropped (see
   Honest bugs below for why that specific behavior exists).
 
-**Training** (`train.py`, `python -m quantiq.ml.train [--real-data --ticker
+**Training** (`train.py`, `python -m quantml.ml.train [--real-data --ticker
 AAPL --period 5y]`): a single **chronological** train/test split (not
 random -- price history is sequential, so a random split would leak future
 information into training through overlapping rolling-window features,
@@ -60,7 +60,7 @@ found a real case of exactly that divergence (see Results). Everything is
 logged to **MLflow** (local SQLite backend, `ml/mlflow.db`, no server
 needed) -- params, both metric families, per-model runs.
 
-**Evaluation gate** (`eval_harness.py`, `python -m quantiq.ml.eval_harness
+**Evaluation gate** (`eval_harness.py`, `python -m quantml.ml.eval_harness
 [--update-baseline]`): separate from the pytest unit tests (which check the
 *code*), this checks the *model artifact on disk* is good enough to ship.
 Re-evaluates the saved model against data disjoint from training -- a
@@ -75,7 +75,7 @@ a tolerance versus the last recorded baseline (`eval_baseline.json`).
 recently selected, so `cli.py`, the dashboard, and `paper_runner.py` don't
 each need to know both model classes and pick the right one.
 
-### 2. `python/quantiq/strategies.py::MLSignalStrategy`
+### 2. `python/quantml/strategies.py::MLSignalStrategy`
 
 Same `Strategy` interface as the rule-based strategies below --
 `positions(prices) -> pd.Series` in `[-1, 1]` -- so the trained model
@@ -89,7 +89,7 @@ confident one. Same shift-by-one-day convention as every other strategy
 here, so the position actually held on day *t* was decided using only
 information known before day *t* opened.
 
-### 3. `python/quantiq/` — backtesting engine (rule-based strategies + risk)
+### 3. `python/quantml/` — backtesting engine (rule-based strategies + risk)
 
 Vectorized backtester: strategies emit a target position per bar, the
 engine nets out transaction costs and produces an equity curve. Metrics:
@@ -119,7 +119,7 @@ Includes two baseline technical strategies (moving-average crossover, mean
 reversion) and a `SignalOverlayStrategy` that blends a base strategy's
 position with an external signal series (used by the RAG layer below).
 
-### 4. `python/quantiq/rag/` — retrieval-augmented signal layer
+### 4. `python/quantml/rag/` — retrieval-augmented signal layer
 
 TF-IDF retrieval over a small corpus of sample financial documents
 (`data/sample_docs/`), turned into a per-day sentiment signal that feeds
@@ -128,12 +128,12 @@ into `SignalOverlayStrategy`. Three scoring backends, chosen with
 scoring, zero dependencies), **llm** (sends each document to a local
 Ollama model for a structured `{score, rationale}` response, validated
 with pydantic), and **finetuned** (the actually-fine-tuned classifier from
-`quantiq/finetune/`, below) -- both `llm` and `finetuned` fall back to the
+`quantml/finetune/`, below) -- both `llm` and `finetuned` fall back to the
 lexicon scorer per-document if the endpoint is unreachable / no adapter
 has been trained yet. The 10 documents in `data/sample_docs/` are
 synthetic text for a fictional ticker (`ACME`) -- not real news.
 
-### 4b. `python/quantiq/finetune/` — LLM fine-tuning
+### 4b. `python/quantml/finetune/` — LLM fine-tuning
 
 The `llm` backend above calls a general-purpose model through a prompt --
 useful, but not the same skill as actually fine-tuning one. This module
@@ -164,7 +164,7 @@ so this is genuine per-class signal, not just calling everything
 Neutral) -- not a cherry-picked number, this is what a 2-epoch, 3k-example
 LoRA run on a CPU actually produces, reported as-is.
 
-### 5. `python/quantiq/web/` — research dashboard
+### 5. `python/quantml/web/` — research dashboard
 
 A FastAPI app (`app.py`) turning the CLI demo into a browser UI: equity
 curves, walk-forward folds, VaR/CVaR, GARCH volatility, the risk-limit
@@ -207,7 +207,7 @@ away from a live-money account. Credentials load from a gitignored
 raises a clear `PaperTradingError` instead of silently no-opping if
 they're missing or a request fails.
 
-`paper_runner.py` wires it together: `python -m quantiq.paper_runner
+`paper_runner.py` wires it together: `python -m quantml.paper_runner
 --ticker AAPL --strategy ml_signal` pulls real market data, runs the
 trained model, compares its target position against the account's actual
 paper position, and submits whatever market order closes the gap (or just
@@ -224,12 +224,12 @@ train-if-missing pattern as TenantIQ's `ml/Dockerfile`. Verified by
 simulating the exact container entrypoint locally (Docker itself wasn't
 available in the environment this was built in): copying the source tree
 minus the `.dockerignore`'d artifacts into a clean directory, running the
-same `test -f ... || python3 -m quantiq.ml.train; exec uvicorn ...` command
+same `test -f ... || python3 -m quantml.ml.train; exec uvicorn ...` command
 the `CMD` executes, and confirming it trains fresh then serves correctly.
 
 ```bash
-docker build -t quantiq-dashboard python/
-docker run -p 8080:8080 quantiq-dashboard
+docker build -t quantml-dashboard python/
+docker run -p 8080:8080 quantml-dashboard
 ```
 
 **Azure** (`terraform/`): deploys the dashboard to **Azure Container Apps**
@@ -248,7 +248,7 @@ scikit-learn together, and on Container Apps' 0.5Gi memory it OOM-crashed
 on every cold start -- confirmed via `az containerapp replica list`
 showing `restartCount` climbing while the container never reached a ready
 state. Fixed by moving training into the image *build* step instead (`RUN
-python3 -m quantiq.ml.train` in the Dockerfile, using the build host's
+python3 -m quantml.ml.train` in the Dockerfile, using the build host's
 full resources, not the constrained serving container's) -- which also
 happens to be the more correct pattern anyway: an immutable, reproducible
 model artifact baked into the image, not retrained unpredictably on every
@@ -265,12 +265,12 @@ terraform apply   # needs ARM_CLIENT_ID / ARM_CLIENT_SECRET / ARM_TENANT_ID /
 # no image in the registry yet for it to pull. Build and push one (this
 # `terraform output` gives you the registry name this apply just created):
 az acr build --registry "$(terraform output -raw acr_login_server | cut -d. -f1)" \
-  --image quantiq-dashboard:latest ../python/
+  --image quantml-dashboard:latest ../python/
 
 terraform apply   # succeeds now that the image exists
 ```
 
-Live: **https://quantiq-dashboard.redcliff-1024218d.eastus.azurecontainerapps.io**
+Live: **https://quantml-dashboard.redcliff-1024218d.eastus.azurecontainerapps.io**
 -- verified end-to-end, not just "resources exist": real HTTP 200s, the
 real trained model's metadata from `/api/ml-signal`, and a real live
 prediction against real AAPL data fetched from *inside* the running
@@ -394,7 +394,7 @@ LoRA run on a CPU in about 2 minutes, not a cherry-picked number.
 
 ```
 python/
-  quantiq/
+  quantml/
     data.py                # synthetic OHLCV generator + real (yfinance) loader
     strategies.py           # MA crossover, mean reversion, signal overlay, MLSignalStrategy
     engine.py                 # vectorized backtest engine
@@ -436,37 +436,37 @@ cd python
 pip install -r requirements.txt
 python -m pytest tests/ -v
 
-python -m quantiq.ml.train                              # train on synthetic data
-python -m quantiq.ml.train --real-data --ticker AAPL --period 5y   # or real data
-python -m quantiq.ml.eval_harness --update-baseline      # quality gate + record baseline
+python -m quantml.ml.train                              # train on synthetic data
+python -m quantml.ml.train --real-data --ticker AAPL --period 5y   # or real data
+python -m quantml.ml.eval_harness --update-baseline      # quality gate + record baseline
 
-python -m quantiq.cli                                    # full demo: backtest, walk-forward, VaR,
+python -m quantml.cli                                    # full demo: backtest, walk-forward, VaR,
                                                           # GARCH, risk limits, ML signal
-python -m quantiq.cli --real-data --ticker AAPL          # same demo, real Yahoo Finance history
-python -m quantiq.cli --sentiment-backend llm            # score RAG docs with a local LLM (needs Ollama)
-python -m quantiq.cli --sentiment-backend finetuned       # score RAG docs with the fine-tuned model
+python -m quantml.cli --real-data --ticker AAPL          # same demo, real Yahoo Finance history
+python -m quantml.cli --sentiment-backend llm            # score RAG docs with a local LLM (needs Ollama)
+python -m quantml.cli --sentiment-backend finetuned       # score RAG docs with the fine-tuned model
 ```
 
 ### LLM fine-tuning
 
 ```bash
 cd python
-python -m quantiq.finetune.train                         # LoRA fine-tune DistilBERT (~2 min, CPU)
-python -m quantiq.finetune.eval_harness --update-baseline # quality gate + record baseline
+python -m quantml.finetune.train                         # LoRA fine-tune DistilBERT (~2 min, CPU)
+python -m quantml.finetune.eval_harness --update-baseline # quality gate + record baseline
 ```
 
 ### Docker
 
 ```bash
-docker build -t quantiq-dashboard python/
-docker run -p 8080:8080 quantiq-dashboard
+docker build -t quantml-dashboard python/
+docker run -p 8080:8080 quantml-dashboard
 ```
 
 ### Web dashboard
 
 ```bash
 cd python
-uvicorn quantiq.web.app:app --reload --port 8080
+uvicorn quantml.web.app:app --reload --port 8080
 # then open http://localhost:8080
 ```
 
@@ -480,8 +480,8 @@ cd python
 cp .env.example .env      # then fill in ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY
                            # (.env is gitignored -- never committed, loaded automatically)
 
-python -m quantiq.paper_runner --ticker AAPL --strategy ml_signal --dry-run
-python -m quantiq.paper_runner --ticker AAPL --strategy ml_signal   # actually submits the paper order
+python -m quantml.paper_runner --ticker AAPL --strategy ml_signal --dry-run
+python -m quantml.paper_runner --ticker AAPL --strategy ml_signal   # actually submits the paper order
 ```
 
 ## Roadmap

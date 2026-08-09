@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from quantiq.data import generate_synthetic_ohlcv
-from quantiq.strategies import MLSignalStrategy
+from quantml.data import generate_synthetic_ohlcv
+from quantml.strategies import MLSignalStrategy
 
 
 class _StubModel:
@@ -56,7 +56,7 @@ def test_position_is_shifted_one_day_no_lookahead(prices):
             # which day's prediction ends up on which day's position.
             return np.linspace(0.1, 0.9, len(X))
 
-    from quantiq.ml.features import build_features
+    from quantml.ml.features import build_features
 
     strategy = MLSignalStrategy(model=_VaryingModel())
     pos = strategy.positions(prices)

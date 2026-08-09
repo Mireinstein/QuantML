@@ -1,7 +1,7 @@
 """Train the ML trading signal.
 
-    python -m quantiq.ml.train
-    python -m quantiq.ml.train --real-data --ticker AAPL --period 5y
+    python -m quantml.ml.train
+    python -m quantml.ml.train --real-data --ticker AAPL --period 5y
 
 Trains a logistic regression baseline, a gradient-boosted tree, and a small
 GRU sequence model (model.py) on the SAME chronologically-ordered
@@ -39,7 +39,7 @@ from .model import SklearnSignalModel, TorchSignalModel, build_gradient_boosting
 HERE = Path(__file__).resolve().parent
 METADATA_PATH = HERE / "model_metadata.json"
 mlflow.set_tracking_uri(f"sqlite:///{HERE / 'mlflow.db'}")
-mlflow.set_experiment("quantiq-ml-signal")
+mlflow.set_experiment("quantml-ml-signal")
 
 TEST_FRACTION = 0.25
 
@@ -77,7 +77,7 @@ def evaluate_on_backtest(model, prices, test_start_date, run_name: str, params: 
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Train the QuantIQ ML trading signal")
+    parser = argparse.ArgumentParser(description="Train the QuantML ML trading signal")
     parser.add_argument("--real-data", action="store_true")
     parser.add_argument("--ticker", default="ACME")
     parser.add_argument("--period", default="5y", help="yfinance window when --real-data is set")

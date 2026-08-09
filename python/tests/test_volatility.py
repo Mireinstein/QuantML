@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from quantiq.volatility import fit_arima, fit_garch, naive_rolling_vol
+from quantml.volatility import fit_arima, fit_garch, naive_rolling_vol
 
 
 def simulate_garch_series(n=800, omega=1e-5, alpha=0.15, beta=0.8, seed=3):

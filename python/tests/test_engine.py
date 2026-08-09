@@ -2,10 +2,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from quantiq.data import generate_synthetic_ohlcv
-from quantiq.engine import run_backtest
-from quantiq.metrics import cagr, max_drawdown, monte_carlo_var, sharpe_ratio, summarize
-from quantiq.strategies import MeanReversion, MovingAverageCrossover, SignalOverlayStrategy
+from quantml.data import generate_synthetic_ohlcv
+from quantml.engine import run_backtest
+from quantml.metrics import cagr, max_drawdown, monte_carlo_var, sharpe_ratio, summarize
+from quantml.strategies import MeanReversion, MovingAverageCrossover, SignalOverlayStrategy
 
 
 @pytest.fixture

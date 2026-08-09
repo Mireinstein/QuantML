@@ -2,7 +2,7 @@
 volatility/ML-signal stack in `cli.py` and `ml/`.
 
     cd python
-    uvicorn quantiq.web.app:app --reload --port 8080
+    uvicorn quantml.web.app:app --reload --port 8080
 
 The dashboard endpoints reuse cli.py's exact recipe (same seeds, same
 strategy construction) so the numbers they return match the README's
@@ -43,8 +43,8 @@ from ..strategies import MovingAverageCrossover, SignalOverlayStrategy
 from ..volatility import fit_garch, naive_rolling_vol
 from ..walk_forward import run_walk_forward, summarize_walk_forward
 
-# web/app.py sits one level deeper than cli.py (quantiq/web/app.py vs
-# quantiq/cli.py), so this needs one more .parent than cli.py's CORPUS_DIR.
+# web/app.py sits one level deeper than cli.py (quantml/web/app.py vs
+# quantml/cli.py), so this needs one more .parent than cli.py's CORPUS_DIR.
 CORPUS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "sample_docs"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 TICKER = "ACME"
@@ -85,7 +85,7 @@ def _iso_dates(index) -> list[str]:
     return [d.date().isoformat() for d in index]
 
 
-app = FastAPI(title="QuantIQ Dashboard", version="1.0")
+app = FastAPI(title="QuantML Dashboard", version="1.0")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 

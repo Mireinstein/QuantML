@@ -1,4 +1,4 @@
-# Build context is python/:  docker build -t quantiq-dashboard python/
+# Build context is python/:  docker build -t quantml-dashboard python/
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -20,7 +20,7 @@ COPY . .
 # inside the image build instead uses the build host's full resources, and
 # bakes an immutable, reproducible model artifact into the image -- a
 # better practice regardless of the memory constraint that surfaced it.
-RUN python3 -m quantiq.ml.train
+RUN python3 -m quantml.ml.train
 
 EXPOSE 8080
-CMD ["uvicorn", "quantiq.web.app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "quantml.web.app:app", "--host", "0.0.0.0", "--port", "8080"]

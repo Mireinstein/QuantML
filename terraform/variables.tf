@@ -5,7 +5,7 @@ variable "location" {
 }
 
 variable "image_tag" {
-  description = "Tag of the quantiq-dashboard image in ACR to deploy"
+  description = "Tag of the quantml-dashboard image in ACR to deploy"
   type        = string
   default     = "latest"
 }

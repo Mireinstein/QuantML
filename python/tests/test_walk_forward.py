@@ -1,8 +1,8 @@
 import pytest
 
-from quantiq.data import generate_synthetic_ohlcv
-from quantiq.strategies import MovingAverageCrossover
-from quantiq.walk_forward import run_walk_forward, summarize_walk_forward
+from quantml.data import generate_synthetic_ohlcv
+from quantml.strategies import MovingAverageCrossover
+from quantml.walk_forward import run_walk_forward, summarize_walk_forward
 
 
 @pytest.fixture

@@ -3,9 +3,9 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from quantiq import paper_runner
-from quantiq.paper_trading import OrderResult, Position
-from quantiq.strategies import Strategy
+from quantml import paper_runner
+from quantml.paper_trading import OrderResult, Position
+from quantml.strategies import Strategy
 
 
 class _FixedStrategy(Strategy):

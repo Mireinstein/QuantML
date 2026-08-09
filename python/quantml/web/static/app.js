@@ -1,4 +1,4 @@
-// QuantIQ dashboard frontend. No CDN dependencies -- charts are hand-rolled
+// QuantML dashboard frontend. No CDN dependencies -- charts are hand-rolled
 // inline SVG (a couple of small helpers below) rather than pulling in a
 // charting library, matching the rest of this project's "runs offline, no
 // unnecessary dependencies" standard.
@@ -232,7 +232,7 @@ async function loadMlSignal() {
     statsRow.appendChild(statTile("Held-out Max DD", (bt.max_drawdown * 100).toFixed(2) + "%"));
     statsRow.appendChild(statTile("Held-out win rate", (bt.win_rate * 100).toFixed(1) + "%"));
   } catch (e) {
-    metaRow.innerHTML = `<div class="note">No trained model yet -- run \`python -m quantiq.ml.train\` from python/, then reload.</div>`;
+    metaRow.innerHTML = `<div class="note">No trained model yet -- run \`python -m quantml.ml.train\` from python/, then reload.</div>`;
   }
 }
 

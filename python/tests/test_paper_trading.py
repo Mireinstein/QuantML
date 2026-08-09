@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from quantiq import paper_trading as pt
+from quantml import paper_trading as pt
 
 
 @pytest.fixture(autouse=True)

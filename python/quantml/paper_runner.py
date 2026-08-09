@@ -1,8 +1,8 @@
 """Rebalances a real Alpaca PAPER account (no real capital) to match a
 strategy's target position, computed from REAL market data.
 
-    python -m quantiq.paper_runner --ticker AAPL --qty-per-unit 10
-    python -m quantiq.paper_runner --ticker AAPL --dry-run   # compute only, submit nothing
+    python -m quantml.paper_runner --ticker AAPL --qty-per-unit 10
+    python -m quantml.paper_runner --ticker AAPL --dry-run   # compute only, submit nothing
 
 This is a single-shot rebalance, not a scheduler/daemon -- run it manually,
 or point cron/a scheduled task at it if you want periodic rebalancing.

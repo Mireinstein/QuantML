@@ -6,7 +6,7 @@ backend does. The two are complementary: this produces a small, fast,
 locally-runnable classifier; the RAG "llm" backend uses a general-purpose
 model's broader reasoning at the cost of a network call per document.
 
-    python -m quantiq.finetune.train
+    python -m quantml.finetune.train
 
 LoRA (Low-Rank Adaptation) trains a small pair of low-rank matrices
 injected into the attention projections instead of the model's ~66M base
@@ -40,7 +40,7 @@ METADATA_PATH = HERE / "model_metadata.json"
 BASE_MODEL = "distilbert-base-uncased"
 
 mlflow.set_tracking_uri(f"sqlite:///{HERE / 'mlflow.db'}")
-mlflow.set_experiment("quantiq-sentiment-finetune")
+mlflow.set_experiment("quantml-sentiment-finetune")
 
 
 def _compute_metrics(eval_pred):

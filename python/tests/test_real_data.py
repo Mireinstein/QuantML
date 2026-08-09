@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from quantiq.data import load_real_ohlcv
+from quantml.data import load_real_ohlcv
 
 
 class _FakeTicker:
@@ -13,10 +13,10 @@ class _FakeTicker:
 
 
 def _fake_yfinance_history(monkeypatch, df: pd.DataFrame):
-    """Patches quantiq.data.yf.Ticker so tests never hit the real network --
+    """Patches quantml.data.yf.Ticker so tests never hit the real network --
     load_real_ohlcv's contract (column names/shape) is what's under test
     here, not Yahoo Finance's actual availability."""
-    import quantiq.data as data_module
+    import quantml.data as data_module
 
     monkeypatch.setattr(data_module.yf, "Ticker", lambda ticker: _FakeTicker(df))  # noqa: ARG005
 
@@ -54,8 +54,8 @@ def test_load_real_ohlcv_is_a_drop_in_for_the_backtester(monkeypatch):
     """The whole point of matching generate_synthetic_ohlcv's contract is
     that run_backtest doesn't need to know which data source it's looking
     at -- prove that by actually running one."""
-    from quantiq.engine import run_backtest
-    from quantiq.strategies import MovingAverageCrossover
+    from quantml.engine import run_backtest
+    from quantml.strategies import MovingAverageCrossover
 
     idx = pd.date_range("2024-01-02", periods=150, freq="B", tz="America/New_York")
     close = pd.Series(range(150), dtype=float) + 100

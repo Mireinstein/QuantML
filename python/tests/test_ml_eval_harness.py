@@ -1,6 +1,6 @@
 import pytest
 
-from quantiq.ml.eval_harness import (
+from quantml.ml.eval_harness import (
     MAX_AUC_REGRESSION,
     MAX_SHARPE_REGRESSION,
     MIN_AUC,

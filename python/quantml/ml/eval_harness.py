@@ -6,8 +6,8 @@ training, then fails (non-zero exit) if ROC-AUC or held-out backtest
 Sharpe fall below fixed floors, or regress past a tolerance versus the
 last recorded baseline (eval_baseline.json).
 
-    python -m quantiq.ml.eval_harness
-    python -m quantiq.ml.eval_harness --update-baseline
+    python -m quantml.ml.eval_harness
+    python -m quantml.ml.eval_harness --update-baseline
 
 Honest limitation: for a model trained on real market data, "fresh" data
 means re-fetching the same ticker/period from Yahoo Finance -- which, run

@@ -3,10 +3,10 @@ strategy vs the trained ML signal (see ml/train.py), backtested on
 synthetic price data by default -- or real historical prices with
 --real-data (no account/API key needed, see data.py::load_real_ohlcv).
 
-    python -m quantiq.cli
-    python -m quantiq.cli --sentiment-backend llm        # score docs with a local LLM instead of the lexicon backend
-    python -m quantiq.cli --sentiment-backend finetuned  # score docs with the fine-tuned DistilBERT+LoRA model
-    python -m quantiq.cli --real-data --ticker AAPL      # backtest against real Yahoo Finance history
+    python -m quantml.cli
+    python -m quantml.cli --sentiment-backend llm        # score docs with a local LLM instead of the lexicon backend
+    python -m quantml.cli --sentiment-backend finetuned  # score docs with the fine-tuned DistilBERT+LoRA model
+    python -m quantml.cli --real-data --ticker AAPL      # backtest against real Yahoo Finance history
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ CORPUS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "sample_do
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="QuantIQ backtest demo")
+    parser = argparse.ArgumentParser(description="QuantML backtest demo")
     parser.add_argument("--ticker", default="ACME")
     parser.add_argument(
         "--sentiment-backend",
@@ -96,7 +96,7 @@ def main() -> None:
         )
     except ModelNotTrainedError:
         print(
-            "\n(Skipping ML signal: no trained model yet. Run `python -m quantiq.ml.train` "
+            "\n(Skipping ML signal: no trained model yet. Run `python -m quantml.ml.train` "
             "-- optionally with --real-data --ticker <TICKER> -- from python/ first.)"
         )
 

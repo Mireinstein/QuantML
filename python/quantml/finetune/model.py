@@ -27,7 +27,7 @@ class FineTunedSentimentScorer:
     def __init__(self):
         if not ADAPTER_DIR.exists() or not METADATA_PATH.exists():
             raise ModelNotTrainedError(
-                f"No fine-tuned adapter at {ADAPTER_DIR} -- run `python -m quantiq.finetune.train` first."
+                f"No fine-tuned adapter at {ADAPTER_DIR} -- run `python -m quantml.finetune.train` first."
             )
         metadata = json.loads(METADATA_PATH.read_text())
         self.label_names = metadata["label_names"]

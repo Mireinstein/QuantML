@@ -1,11 +1,11 @@
-"""Tests for the FastAPI dashboard (quantiq.web.app), using FastAPI's
+"""Tests for the FastAPI dashboard (quantml.web.app), using FastAPI's
 TestClient (same pattern as TenantIQ's ml/tests/test_serve.py)."""
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
 
-from quantiq.web.app import app
+from quantml.web.app import app
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ def test_risk_limits_shape(client):
 
 
 def test_ml_signal_returns_503_when_no_model_trained(client, monkeypatch, tmp_path):
-    import quantiq.web.app as app_module
+    import quantml.web.app as app_module
 
     monkeypatch.setattr(app_module, "load_metadata", _raise_not_trained)
     r = client.get("/api/ml-signal")
@@ -112,7 +112,7 @@ def test_ml_signal_predict_rejects_a_ticker_with_no_history(client):
 
 
 def _raise_not_trained(*args, **kwargs):
-    from quantiq.ml.registry import ModelNotTrainedError
+    from quantml.ml.registry import ModelNotTrainedError
 
     raise ModelNotTrainedError("no model for this test")
 
@@ -124,7 +124,7 @@ def test_index_serves_html(client):
     r = client.get("/")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
-    assert "<title>QuantIQ Dashboard</title>" in r.text
+    assert "<title>QuantML Dashboard</title>" in r.text
 
 
 def test_static_js_served(client):

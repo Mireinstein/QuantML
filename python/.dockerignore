@@ -3,9 +3,9 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .env
-quantiq/ml/model.joblib
-quantiq/ml/model.pt
-quantiq/ml/model_metadata.json
-quantiq/ml/mlflow.db
-quantiq/ml/mlruns/
+quantml/ml/model.joblib
+quantml/ml/model.pt
+quantml/ml/model_metadata.json
+quantml/ml/mlflow.db
+quantml/ml/mlruns/
 tests/

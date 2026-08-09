@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from quantiq.data import generate_synthetic_ohlcv
-from quantiq.ml.features import FEATURE_COLUMNS, LABEL_COLUMN, build_features, build_features_and_labels
+from quantml.data import generate_synthetic_ohlcv
+from quantml.ml.features import FEATURE_COLUMNS, LABEL_COLUMN, build_features, build_features_and_labels
 
 
 @pytest.fixture

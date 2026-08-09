@@ -19,7 +19,7 @@ class ModelNotTrainedError(RuntimeError):
 
 def load_metadata() -> dict:
     if not METADATA_PATH.exists():
-        raise ModelNotTrainedError(f"No trained model at {METADATA_PATH} -- run `python -m quantiq.ml.train` first.")
+        raise ModelNotTrainedError(f"No trained model at {METADATA_PATH} -- run `python -m quantml.ml.train` first.")
     return json.loads(METADATA_PATH.read_text())
 
 

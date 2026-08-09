@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from quantiq.rag.retriever import Document, Retriever, load_corpus
-from quantiq.rag.signal import _lexicon_score, build_signal
+from quantml.rag.retriever import Document, Retriever, load_corpus
+from quantml.rag.signal import _lexicon_score, build_signal
 
 CORPUS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "sample_docs"
 
@@ -48,7 +48,7 @@ def test_build_signal_finetuned_backend_falls_back_to_lexicon_when_untrained(mon
     """If no adapter has been trained yet, backend="finetuned" must degrade
     to the lexicon scorer per-document, not raise -- same graceful-fallback
     contract as the llm backend."""
-    import quantiq.finetune.model as finetune_model
+    import quantml.finetune.model as finetune_model
 
     def _raise(*args, **kwargs):
         raise finetune_model.ModelNotTrainedError("no adapter for this test")
