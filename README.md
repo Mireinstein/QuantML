@@ -179,6 +179,21 @@ machine-local) and shown on the dashboard's "Live autonomous trading"
 panel if the dashboard is running on the same machine. A single cycle's
 failure is logged and the loop moves on rather than dying.
 
+**Bot trading performance panel**: reports on the loop, it doesn't
+require operating it. Three endpoints, all reading straight from Alpaca
+rather than reconstructing state locally:
+
+- `GET /api/autonomous/equity` — the paper account's real equity over
+  time (`paper_trading.py::get_portfolio_history`), stays flat until
+  orders actually fill.
+- `GET /api/autonomous/trades` — real order history
+  (`paper_trading.py::list_orders`): side, qty, status, and whether it's
+  actually filled (`filled_qty`/`filled_avg_price`) or still pending.
+- `GET /api/autonomous/generations` — every retrain the loop attempted,
+  promoted or rejected, with the AUC/Sharpe that decided it (derived from
+  the local activity log, the only record of promotion decisions) — shows
+  whether the model has actually been improving.
+
 ## Deployment
 
 **Docker** (`python/Dockerfile`): trains the model at image build time

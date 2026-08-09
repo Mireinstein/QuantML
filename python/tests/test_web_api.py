@@ -193,6 +193,85 @@ def test_autonomous_activity_empty_when_never_run(client, monkeypatch, tmp_path)
     assert r.json() == {"activity": []}
 
 
+def test_autonomous_trades_returns_503_without_credentials(client, monkeypatch):
+    import quantml.web.app as app_module
+    from quantml.paper_trading import PaperTradingError
+
+    def _raise(*args, **kwargs):
+        raise PaperTradingError("missing credentials")
+
+    monkeypatch.setattr(app_module, "list_orders", _raise)
+    r = client.get("/api/autonomous/trades")
+    assert r.status_code == 503
+
+
+def test_autonomous_trades_shape(client, monkeypatch):
+    import quantml.web.app as app_module
+    from quantml.paper_trading import OrderRecord
+
+    monkeypatch.setattr(
+        app_module,
+        "list_orders",
+        lambda **kwargs: [
+            OrderRecord(
+                id="o1", symbol="AAPL", side="buy", qty=5, status="filled",
+                filled_qty=5, filled_avg_price=201.5, submitted_at="2026-08-09T15:08:37Z",
+            )
+        ],
+    )
+    r = client.get("/api/autonomous/trades")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["trades"][0]["filled_avg_price"] == 201.5
+
+
+def test_autonomous_equity_returns_503_without_credentials(client, monkeypatch):
+    import quantml.web.app as app_module
+    from quantml.paper_trading import PaperTradingError
+
+    def _raise(*args, **kwargs):
+        raise PaperTradingError("missing credentials")
+
+    monkeypatch.setattr(app_module, "get_portfolio_history", _raise)
+    r = client.get("/api/autonomous/equity")
+    assert r.status_code == 503
+
+
+def test_autonomous_equity_shape(client, monkeypatch):
+    import quantml.web.app as app_module
+    from quantml.paper_trading import PortfolioHistory
+
+    monkeypatch.setattr(
+        app_module,
+        "get_portfolio_history",
+        lambda **kwargs: PortfolioHistory(
+            timestamps=["2026-08-01T00:00:00+00:00"], equity=[100000.0], profit_loss=[0.0],
+            profit_loss_pct=[0.0], base_value=100000.0,
+        ),
+    )
+    r = client.get("/api/autonomous/equity")
+    assert r.status_code == 200
+    assert r.json()["equity"] == [100000.0]
+
+
+def test_autonomous_generations_filters_to_promotion_events(client, monkeypatch):
+    from quantml import autonomous
+
+    monkeypatch.setattr(
+        autonomous,
+        "recent_activity",
+        lambda n: [
+            {"event": "cycle", "cycle": 1},
+            {"event": "model_promoted", "generation": 1, "auc": 0.56},
+            {"event": "retrain_rejected", "reasons": ["Sharpe regressed"]},
+        ],
+    )
+    r = client.get("/api/autonomous/generations")
+    assert r.status_code == 200
+    events = [g["event"] for g in r.json()["generations"]]
+    assert events == ["model_promoted", "retrain_rejected"]
+
+
 # --- Static frontend -----------------------------------------------------
 
 

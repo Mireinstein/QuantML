@@ -91,6 +91,22 @@
       <div id="trade-result" class="stat-row"></div>
     </section>
 
+    <section class="panel" id="panel-bot-performance">
+      <h2>Bot trading performance</h2>
+      <p class="sub">What the autonomous bot has actually done -- pulled straight from the Alpaca paper account, not a simulation. Start it once (<code>python -m quantml.autonomous --ticker AAPL</code>) and this section reports on it; nothing here requires you to place a trade yourself.</p>
+
+      <h3 style="margin-top:12px">Account equity over time</h3>
+      <div class="chart-wrap" id="equity-chart"></div>
+      <div id="equity-stats" class="stat-row"></div>
+
+      <h3 style="margin-top:20px">Trades placed</h3>
+      <div id="trades-table"></div>
+
+      <h3 style="margin-top:20px">Model generations</h3>
+      <p class="sub">Every retrain the loop attempted: promoted (passed the quality gate, became the live model) or rejected (didn't beat the current baseline, discarded).</p>
+      <div id="generations-table"></div>
+    </section>
+
     <section class="panel" id="panel-autonomous">
       <h2>Live autonomous trading (local only)</h2>
       <p class="sub">Activity from the local continuous-learning + paper-trading loop (<code>python -m quantml.autonomous</code>), if it's running on this machine. It replays real historical data at an accelerated pace, trades each cycle, and periodically retrains + gates + promotes a new model -- see autonomous.py for why replay, not live overnight data.</p>

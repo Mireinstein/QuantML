@@ -39,7 +39,7 @@ from ..ml.explain import explain_model
 from ..ml.features import LABEL_COLUMN, build_features, build_features_and_labels
 from ..ml.registry import ModelNotTrainedError, load_best_model, load_metadata
 from ..paper_runner import rebalance
-from ..paper_trading import PaperTradingError
+from ..paper_trading import PaperTradingError, get_portfolio_history, list_orders
 from ..rag.retriever import Document, load_corpus
 from ..rag.signal import build_signal
 from ..risk import RiskLimits, apply_risk_limits
@@ -299,3 +299,60 @@ def get_autonomous_activity(n: int = Query(default=50, ge=1, le=200)) -> dict:
     dashboard runs itself (see autonomous.py's module docstring for why);
     this endpoint just surfaces its log file if one exists alongside it."""
     return {"activity": autonomous.recent_activity(n)}
+
+
+@app.get("/api/autonomous/trades")
+def get_autonomous_trades(limit: int = Query(default=50, ge=1, le=200)) -> dict:
+    """Real order history straight from Alpaca -- ground truth for what
+    the bot has actually done, not a reconstruction from the local log.
+    503 if no Alpaca credentials are configured (nothing to report)."""
+    try:
+        orders = list_orders(status="all", limit=limit)
+    except PaperTradingError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return {
+        "trades": [
+            {
+                "id": o.id,
+                "symbol": o.symbol,
+                "side": o.side,
+                "qty": o.qty,
+                "status": o.status,
+                "filled_qty": o.filled_qty,
+                "filled_avg_price": o.filled_avg_price,
+                "submitted_at": o.submitted_at,
+            }
+            for o in orders
+        ]
+    }
+
+
+@app.get("/api/autonomous/equity")
+def get_autonomous_equity(period: str = Query(default="1M"), timeframe: str = Query(default="1D")) -> dict:
+    """Real account equity over time straight from Alpaca -- the actual
+    trajectory of the paper account's value as trades fill, not a
+    backtested curve. Flat until orders actually fill (see README)."""
+    try:
+        history = get_portfolio_history(period=period, timeframe=timeframe)
+    except PaperTradingError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return {
+        "timestamps": history.timestamps,
+        "equity": history.equity,
+        "profit_loss": history.profit_loss,
+        "profit_loss_pct": history.profit_loss_pct,
+        "base_value": history.base_value,
+    }
+
+
+@app.get("/api/autonomous/generations")
+def get_autonomous_generations() -> dict:
+    """Model version history: every retrain the autonomous loop actually
+    promoted (passed the quality gate) or rejected, in order, with the
+    metrics that decided it -- derived from the local activity log
+    (quantml/ml/autonomous_log.jsonl), since that's the only record of
+    promotion decisions. Shows whether the model has actually been
+    improving, not just that retrains happened."""
+    activity = autonomous.recent_activity(autonomous.MAX_LOG_LINES_RETURNED)
+    generations = [e for e in activity if e["event"] in ("model_promoted", "retrain_rejected")]
+    return {"generations": generations}

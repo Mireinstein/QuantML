@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -71,6 +72,27 @@ class OrderResult:
     qty: float
     side: str
     status: str
+
+
+@dataclass
+class OrderRecord:
+    id: str
+    symbol: str
+    side: str
+    qty: float
+    status: str
+    filled_qty: float
+    filled_avg_price: Optional[float]
+    submitted_at: str
+
+
+@dataclass
+class PortfolioHistory:
+    timestamps: list[str]
+    equity: list[float]
+    profit_loss: list[float]
+    profit_loss_pct: list[float]
+    base_value: float
 
 
 def _credentials() -> tuple[str, str]:
@@ -160,4 +182,41 @@ def submit_market_order(symbol: str, qty: float, side: Literal["buy", "sell"]) -
     )
     return OrderResult(
         id=data["id"], symbol=data["symbol"], qty=float(data["qty"]), side=data["side"], status=data["status"]
+    )
+
+
+def list_orders(status: str = "all", limit: int = 50) -> list[OrderRecord]:
+    """Real order history straight from Alpaca -- ground truth for what
+    the account has actually done, not a reconstruction from a local log.
+    `filled_qty`/`filled_avg_price` distinguish an order that was merely
+    accepted from one that actually executed."""
+    data = _request("GET", "/v2/orders", params={"status": status, "limit": limit})
+    return [
+        OrderRecord(
+            id=o["id"],
+            symbol=o["symbol"],
+            side=o["side"],
+            qty=float(o["qty"]),
+            status=o["status"],
+            filled_qty=float(o["filled_qty"]),
+            filled_avg_price=float(o["filled_avg_price"]) if o["filled_avg_price"] else None,
+            submitted_at=o["submitted_at"],
+        )
+        for o in data
+    ]
+
+
+def get_portfolio_history(period: str = "1M", timeframe: str = "1D") -> PortfolioHistory:
+    """Real account equity over time, straight from Alpaca -- the actual
+    trajectory of the paper account's value, not a backtested curve.
+    `period`/`timeframe` follow Alpaca's own conventions (e.g. period:
+    "1D", "1W", "1M", "1A"; timeframe: "1Min", "15Min", "1H", "1D")."""
+    data = _request("GET", "/v2/account/portfolio/history", params={"period": period, "timeframe": timeframe})
+    timestamps = [datetime.fromtimestamp(t, tz=timezone.utc).isoformat() for t in data["timestamp"]]
+    return PortfolioHistory(
+        timestamps=timestamps,
+        equity=data["equity"],
+        profit_loss=data["profit_loss"],
+        profit_loss_pct=data["profit_loss_pct"],
+        base_value=data["base_value"],
     )

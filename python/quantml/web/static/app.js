@@ -305,6 +305,87 @@ async function runTrade(ticker, qtyPerUnit) {
   }
 }
 
+function tableFrom(rows, columns) {
+  // columns: [[header, key, formatter?]]
+  if (!rows.length) return `<div class="note">No data yet.</div>`;
+  const head = columns.map(([label]) => `<th>${label}</th>`).join("");
+  const body = rows
+    .map(
+      (row) =>
+        `<tr>${columns.map(([, key, fmtFn]) => `<td>${fmtFn ? fmtFn(row[key], row) : (row[key] ?? "-")}</td>`).join("")}</tr>`
+    )
+    .join("");
+  return `<table class="data-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function loadEquity() {
+  const chartContainer = document.getElementById("equity-chart");
+  const statsRow = document.getElementById("equity-stats");
+  try {
+    const d = await getJSON("/api/autonomous/equity?period=1M&timeframe=1D");
+    lineChart(
+      chartContainer,
+      [{ values: d.equity }],
+      { xlabels: [d.timestamps[0]?.slice(0, 10), d.timestamps[d.timestamps.length - 1]?.slice(0, 10)], colors: ["var(--accent)"], yfmt: (v) => "$" + v.toFixed(0) }
+    );
+    statsRow.innerHTML = "";
+    const latestPL = d.profit_loss[d.profit_loss.length - 1] ?? 0;
+    const latestPLPct = d.profit_loss_pct[d.profit_loss_pct.length - 1] ?? 0;
+    statsRow.appendChild(statTile("Base value", "$" + fmt(d.base_value, 2)));
+    statsRow.appendChild(statTile("Current equity", "$" + fmt(d.equity[d.equity.length - 1], 2)));
+    statsRow.appendChild(statTile("P/L", "$" + fmt(latestPL, 2), latestPL >= 0 ? "group" : "overlay"));
+    statsRow.appendChild(statTile("P/L %", (latestPLPct * 100).toFixed(3) + "%", latestPL >= 0 ? "group" : "overlay"));
+  } catch (e) {
+    chartContainer.innerHTML = `<div class="note">${e.message === "Failed to fetch" ? "Risk model / paper trading not configured on this server." : e.message}</div>`;
+    statsRow.innerHTML = "";
+  }
+}
+
+async function loadTrades() {
+  const container = document.getElementById("trades-table");
+  try {
+    const d = await getJSON("/api/autonomous/trades?limit=50");
+    container.innerHTML = tableFrom(d.trades, [
+      ["Submitted", "submitted_at", (v) => v.slice(0, 19).replace("T", " ")],
+      ["Side", "side"],
+      ["Qty", "qty"],
+      ["Status", "status"],
+      ["Filled qty", "filled_qty"],
+      ["Filled @", "filled_avg_price", (v) => (v ? "$" + Number(v).toFixed(2) : "pending")],
+    ]);
+  } catch (e) {
+    container.innerHTML = `<div class="note">${e.message}</div>`;
+  }
+}
+
+async function loadGenerations() {
+  const container = document.getElementById("generations-table");
+  try {
+    const d = await getJSON("/api/autonomous/generations");
+    const rows = d.generations
+      .slice()
+      .reverse()
+      .map((g) => ({
+        timestamp: (g.timestamp || "").slice(0, 19).replace("T", " "),
+        outcome: g.event === "model_promoted" ? "promoted" : "rejected",
+        model_type: g.model_type ?? g.candidate_model_type ?? "-",
+        auc: g.auc ?? g.candidate_auc,
+        sharpe: g.sharpe ?? g.candidate_sharpe,
+        reasons: (g.reasons || []).join("; "),
+      }));
+    container.innerHTML = tableFrom(rows, [
+      ["When", "timestamp"],
+      ["Outcome", "outcome"],
+      ["Model", "model_type"],
+      ["AUC", "auc", (v) => fmt(v, 3)],
+      ["Sharpe", "sharpe", (v) => fmt(v, 3)],
+      ["Why rejected", "reasons"],
+    ]);
+  } catch (e) {
+    container.innerHTML = `<div class="note">${e.message}</div>`;
+  }
+}
+
 async function loadAutonomousActivity() {
   const container = document.getElementById("autonomous-activity");
   try {
@@ -349,6 +430,15 @@ document.addEventListener("DOMContentLoaded", () => {
   loadMlSignal().catch(console.error);
   loadAutonomousActivity().catch(console.error);
   setInterval(() => loadAutonomousActivity().catch(console.error), 15000);
+
+  loadEquity().catch(console.error);
+  loadTrades().catch(console.error);
+  loadGenerations().catch(console.error);
+  setInterval(() => {
+    loadEquity().catch(console.error);
+    loadTrades().catch(console.error);
+    loadGenerations().catch(console.error);
+  }, 30000);
 
   loadExplain("AAPL").catch(console.error);
 

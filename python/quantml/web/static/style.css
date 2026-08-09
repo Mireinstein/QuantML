@@ -117,6 +117,28 @@ section.panel .sub {
 .chart-wrap { width: 100%; overflow-x: auto; }
 .chart-wrap svg { display: block; width: 100%; height: auto; }
 
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+  overflow-x: auto;
+  display: block;
+}
+.data-table th, .data-table td {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--panel-border);
+  white-space: nowrap;
+}
+.data-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 button {
   background: var(--accent);
   color: #04101f;
