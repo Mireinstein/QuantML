@@ -585,3 +585,16 @@ python -m quantml.paper_runner --ticker AAPL --strategy ml_signal   # actually s
 - Managed identity (instead of ACR admin credentials) for the Container
   App's registry pull, once the deploy principal has a role scoped to grant
   that without needing subscription-level elevated permissions.
+- Real auth on the dashboard, as the prerequisite for ever running
+  `/api/trade/run` or `autonomous.py` against anything other than a local
+  `.env` -- see the honest limitation above on why Alpaca credentials
+  don't belong in the current Azure deployment.
+- A/B testing / canary rollout for newly-promoted models (serve the
+  challenger to a fraction of predictions, compare live performance
+  before fully cutting over) instead of `autonomous.py`'s current
+  all-or-nothing promotion gate -- a natural next step once there's a way
+  to attribute outcomes back to which model version produced them.
+- Replace `autonomous.py`'s accelerated historical replay with genuine
+  incremental ingestion of new trading days as they actually close, once
+  this runs somewhere persistent enough to wait on real market time
+  instead of a single overnight session.
