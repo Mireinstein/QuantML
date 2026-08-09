@@ -346,9 +346,7 @@ async function loadExplain(ticker) {
 
 async function runTrade(ticker, qtyPerUnit) {
   const resultRow = document.getElementById("trade-result");
-  const confirmed = window.confirm(
-    `Submit a REAL order to your Alpaca PAPER account for ${ticker}, sized to the model's current prediction (up to ${qtyPerUnit} shares)? This is fake money, but it's a real order, not a dry run.`
-  );
+  const confirmed = window.confirm(`Submit an order for ${ticker}, up to ${qtyPerUnit} shares, sized to the model's current prediction?`);
   if (!confirmed) return;
 
   resultRow.innerHTML = `<div class="note">Submitting...</div>`;

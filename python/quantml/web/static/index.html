@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>QuantML Research Dashboard</h1>
-    <p>Backtests, risk, and a trained ML trading signal (scikit-learn + PyTorch), evaluated with no-lookahead walk-forward validation. Not a trading system -- no real capital, real market data only through explicit real-data/paper-trading modes.</p>
+    <p>Backtests, risk, and a trained ML trading signal (scikit-learn + PyTorch), evaluated with no-lookahead walk-forward validation.</p>
   </header>
 
   <main>
@@ -61,10 +61,10 @@
       <p class="sub">A trained model (scikit-learn baseline or a PyTorch GRU sequence model -- whichever won on held-out backtest Sharpe, see ml/train.py) predicting next-day price direction from technical features.</p>
       <div id="ml-meta" class="stat-row"></div>
       <div id="ml-stats" class="stat-row"></div>
-      <p class="note">Held-out performance shown above is the model's TRUE chronological out-of-sample result, recorded at training time -- never recomputed against data that might overlap what it trained on.</p>
+      <p class="note">Held-out performance, recorded at training time.</p>
 
       <h3 style="margin-top:20px">Live prediction</h3>
-      <p class="sub">Ask the model what it thinks about a real ticker right now (genuine inference on today's real market data -- not a backtest).</p>
+      <p class="sub">Live inference on today's market data.</p>
       <form class="ml-form" id="ml-form">
         <label>Company or ticker
           <div class="ticker-autocomplete">
@@ -77,11 +77,11 @@
       <div id="ml-predict-result" class="stat-row"></div>
 
       <h3 style="margin-top:20px">Why: feature importance</h3>
-      <p class="sub">Permutation importance on real recent data -- how much shuffling each feature degrades the live model's AUC. Model-agnostic, computed directly, not assumed.</p>
+      <p class="sub">Permutation importance -- how much shuffling each feature degrades the model's AUC.</p>
       <div class="chart-wrap" id="explain-chart"></div>
 
       <h3 style="margin-top:20px">Run trade now</h3>
-      <p class="sub">Submits a REAL order to a real Alpaca <strong>paper</strong> account (fake money, real broker, real live price) sized to the model's current prediction. Only works if this server has Alpaca paper API credentials configured (see README) -- the public Azure deployment deliberately does not.</p>
+      <p class="sub">Submits an order to the Alpaca paper account, sized to the model's current prediction.</p>
       <form class="ml-form" id="trade-form">
         <label>Company or ticker
           <div class="ticker-autocomplete">
@@ -99,7 +99,7 @@
 
     <section class="panel" id="panel-bot-performance">
       <h2>Bot trading performance</h2>
-      <p class="sub">What the autonomous bot has actually done -- pulled straight from the Alpaca paper account, not a simulation. Everything below is public and visible to anyone; only starting/stopping the bot requires a password.</p>
+      <p class="sub">Trading activity from the Alpaca paper account. Starting or stopping the bot requires a password.</p>
 
       <div class="stat-row" id="bot-control">
         <span id="bot-status-tile" class="stat-tile"><span class="label">Bot status</span><span class="value">checking...</span></span>
@@ -116,18 +116,18 @@
       <div id="trades-table"></div>
 
       <h3 style="margin-top:20px">Model generations</h3>
-      <p class="sub">Every retrain the loop attempted: promoted (passed the quality gate, became the live model) or rejected (didn't beat the current baseline, discarded).</p>
+      <p class="sub">Every retrain attempted: promoted (passed the quality gate) or rejected (didn't beat the baseline).</p>
       <div id="generations-table"></div>
     </section>
 
     <section class="panel" id="panel-autonomous">
       <h2>Live autonomous trading (local only)</h2>
-      <p class="sub">Activity from the local continuous-learning + paper-trading loop (<code>python -m quantml.autonomous</code>), if it's running on this machine. It replays real historical data at an accelerated pace, trades each cycle, and periodically retrains + gates + promotes a new model -- see autonomous.py for why replay, not live overnight data.</p>
+      <p class="sub">Activity from the local continuous-learning loop, if it's running on this machine.</p>
       <div id="autonomous-activity"></div>
     </section>
   </main>
 
-  <footer>QuantML &mdash; research/backtesting demo. No real capital is ever traded.</footer>
+  <footer>QuantML &mdash; no real capital is ever traded.</footer>
 
   <script src="/static/app.js"></script>
 </body>
