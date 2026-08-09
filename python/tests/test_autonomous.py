@@ -173,6 +173,73 @@ def test_run_advances_past_a_rejected_order_instead_of_looping_forever(tmp_path,
     assert len(set(replayed_days)) == 5
 
 
+def test_run_control_pause_resume_round_trip():
+    control = autonomous.RunControl()
+    assert control.paused is False
+    control.paused = True
+    assert control.paused is True
+    control.paused = False
+    assert control.paused is False
+
+
+def test_run_stays_paused_and_logs_nothing_per_cycle_while_paused(tmp_path, monkeypatch):
+    """A paused loop still does its one-time setup (load data, ensure a
+    model exists) -- that happens once at container boot in
+    trader_service.py, not on every start/resume -- but must NEVER run
+    the per-cycle trading logic (predicting, placing an order) while
+    paused, and must log exactly one "loop_paused" event, not one per
+    wake-up. Also regression coverage for the loop_passes/cycle split: a
+    paused loop never advances `cycle`, so bounding the while loop on
+    `cycle` (instead of `loop_passes`) would spin forever here."""
+    prices = generate_synthetic_ohlcv(n_days=400, seed=7)
+
+    model_path = tmp_path / "model.joblib"
+    metadata_path = tmp_path / "model_metadata.json"
+    df = build_features_and_labels(prices)
+    split_idx = int(len(df) * 0.7)
+    test_start_date = df.index[split_idx]
+    model = SklearnSignalModel(build_logistic_baseline()).fit(
+        df[FEATURE_COLUMNS].iloc[:split_idx], df[LABEL_COLUMN].iloc[:split_idx]
+    )
+    model.save(model_path)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "model_type": "logistic_regression",
+                "model_file": "model.joblib",
+                "held_out_auc": 0.55,
+                "held_out_backtest": {"sharpe": 0.5},
+                "test_start_date": str(test_start_date.date()),
+                "data_source": "synthetic",
+            }
+        )
+    )
+
+    monkeypatch.setattr(autonomous, "load_real_ohlcv", lambda ticker, period: prices)
+    monkeypatch.setattr(autonomous, "LOG_PATH", tmp_path / "log.jsonl")
+    monkeypatch.setattr(autonomous, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(autonomous.eval_harness, "BASELINE_PATH", tmp_path / "eval_baseline.json")
+
+    import quantml.ml.registry as registry_module
+
+    monkeypatch.setattr(registry_module, "METADATA_PATH", metadata_path)
+    monkeypatch.setattr(registry_module, "HERE", tmp_path)
+
+    def fail_if_called(*args, **kwargs):  # noqa: ARG001
+        raise AssertionError("must not run per-cycle trading logic while paused")
+
+    monkeypatch.setattr(autonomous, "load_best_model", fail_if_called)
+    monkeypatch.setattr(autonomous, "get_position", fail_if_called)
+    monkeypatch.setattr(autonomous, "submit_market_order", fail_if_called)
+
+    control = autonomous.RunControl(paused=True)
+    autonomous.run(ticker="TEST", cycle_seconds=0, max_cycles=3, control=control)
+
+    activity = autonomous.recent_activity()
+    assert [a["event"] for a in activity] == ["loop_started", "loop_paused"]
+
+
 def test_order_result_shape_matches_paper_trading_contract():
     """Guards the (id, symbol, qty, side, status) fields autonomous.py
     reads off an OrderResult when logging a submitted order."""

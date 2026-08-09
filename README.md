@@ -148,12 +148,15 @@ Alpaca credentials configured, so calls there fail closed with a 502.
 Don't add Alpaca credentials to the Azure deployment without adding auth
 first.
 
-### Autonomous continuous-learning loop (`autonomous.py`, local only)
+### Autonomous continuous-learning loop (`autonomous.py`)
 
     python -m quantml.autonomous --ticker AAPL
 
 Trades every cycle and periodically retrains the model on what it's
-learned since, gated the same way as a manual retrain.
+learned since, gated the same way as a manual retrain. Runs locally via
+the command above, or as its own Azure Container App
+(`trader_service.py` wraps it with a pause/resume control API — see
+Deployment) started and stopped from the dashboard.
 
 A real daily bar only updates once per trading day, so a loop waiting on
 live data would sit idle most of the time, especially overnight. Instead
@@ -208,18 +211,30 @@ docker build -t quantml-dashboard python/
 docker run -p 8080:8080 quantml-dashboard
 ```
 
-**Azure** (`terraform/`): deploys to Azure Container Apps (consumption
-plan, scale-to-zero) behind an Azure Container Registry, provisioned with
-Terraform. The image is built and pushed with `az acr build`.
+**Azure** (`terraform/`): two Container Apps behind one Azure Container
+Registry, provisioned with Terraform. The **dashboard** app (public,
+scale-to-zero) serves the FastAPI app. The **trader** app runs the same
+image with its command overridden to `trader_service.py` instead —
+`autonomous.run()` in a background thread behind a tiny internal control
+API, reachable only from other apps in the same Container Apps
+environment, never from the public internet. The dashboard's Start/Stop
+buttons call the trader's internal `/resume`/`/pause` over that private
+network.
 
 ```bash
 cd terraform
 terraform init
+
+source ../python/scripts/set_trading_env.sh   # exports TF_VAR_* for the
+                                                # secrets below from your
+                                                # local python/.env --
+                                                # see that script
+
 terraform apply   # needs ARM_CLIENT_ID / ARM_CLIENT_SECRET / ARM_TENANT_ID /
-                   # ARM_SUBSCRIPTION_ID in the environment (see
+                   # ARM_SUBSCRIPTION_ID in the environment too (see
                    # python/scripts/set_azure_env.sh)
 
-# First apply creates the registry but fails on the Container App -- no
+# First apply creates the registry but fails on the Container Apps -- no
 # image in the registry yet. Build and push one:
 az acr build --registry "$(terraform output -raw acr_login_server | cut -d. -f1)" \
   --image quantml-dashboard:latest ../python/
@@ -229,9 +244,23 @@ terraform apply   # succeeds now that the image exists
 
 Live: **https://quantml-dashboard.salmonmeadow-1842758f.eastus.azurecontainerapps.io**
 
-Cost: Container Registry (Basic SKU) is a flat ~$5/month; Container Apps'
+The trader app starts **paused** on every deploy/restart — it never
+starts real trading on its own. Someone has to click "Start" on the
+dashboard (password-gated; see below).
+
+**Auth**: `DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD` (HTTP Basic Auth,
+`_require_auth` in `web/app.py`) gate exactly two things: `/api/trade/run`
+and the Start/Stop buttons. Every read-only endpoint — performance,
+trade history, model metrics — stays fully public, so the dashboard
+still works as a portfolio piece anyone can view without logging in.
+
+Cost: Container Registry (Basic SKU) is a flat ~$5/month; the dashboard's
 consumption plan scales to zero when idle, within the free monthly
-allowance for a low-traffic demo.
+allowance. The **trader app cannot scale to zero** — it's a continuously
+running loop, not a request handler — so it's billed for compute the
+entire time it exists, on top of the flat-fee items above. At 0.25 vCPU
+/ 0.5Gi that's a modest but real ongoing charge once it's been running a
+full month, unlike everything else in this deployment.
 
 ## Results
 
@@ -262,15 +291,14 @@ held-out financial tweets, against a ~65% majority-class baseline.
   cross-asset, or order-flow features.
 - `paper_runner.py` sizes positions with a fixed `qty_per_unit`, not a
   portfolio-sizing/risk-budgeting system.
-- The Azure deployment is a single instance, no custom domain, no
-  authentication, and the Container Registry uses admin credentials
-  rather than a managed identity (the deploy service principal's
-  Contributor role excludes assigning RBAC roles to other principals —
-  see `terraform/registry.tf`).
-- `/api/trade/run` has no authentication of its own — it's only safe on
-  the public Azure deployment because that container has no Alpaca
-  credentials configured. Real auth is a prerequisite for putting trading
-  credentials in that environment.
+- The Azure deployment is a single dashboard instance behind Azure's
+  default domain (no custom domain), and the Container Registry uses
+  admin credentials rather than a managed identity (the deploy service
+  principal's Contributor role excludes assigning RBAC roles to other
+  principals — see `terraform/registry.tf`). Auth on the dashboard's
+  action endpoints exists (`DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD`,
+  HTTP Basic Auth), but it's a shared single-user password, not a real
+  auth system with sessions or per-user accounts.
 - `autonomous.py`'s continuous learning replays a fixed historical
   download from when the loop started, not genuinely new market data —
   an expanding-window retrain on data the model has already technically
@@ -326,6 +354,7 @@ python/
     paper_trading.py                    # Alpaca paper-trading REST client
     paper_runner.py                       # rebalances a paper account to a strategy's target position
     autonomous.py                           # continuous-learning + paper-trading loop
+    trader_service.py                        # pause/resume control API wrapping autonomous.py (Azure trader app)
     ml/
       features.py     # technical features + next-day-direction labels
       model.py          # SklearnSignalModel, TorchSignalModel (GRU)
@@ -425,9 +454,8 @@ python -m quantml.autonomous --ticker AAPL
   lookback windows for the sequence model.
 - Managed identity (instead of ACR admin credentials) for the Container
   App's registry pull.
-- Real auth on the dashboard, as the prerequisite for running
-  `/api/trade/run` or `autonomous.py` against anything other than a local
-  `.env`.
+- Multi-user auth (sessions, per-user accounts) instead of a single
+  shared HTTP Basic Auth password.
 - A/B testing / canary rollout for newly-promoted models instead of
   `autonomous.py`'s current all-or-nothing promotion gate.
 - Replace `autonomous.py`'s accelerated historical replay with genuine

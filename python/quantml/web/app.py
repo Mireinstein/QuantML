@@ -24,11 +24,15 @@ at all and so has no leakage question to begin with.
 """
 from __future__ import annotations
 
+import os
+import secrets
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+import requests as http
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 from .. import autonomous
@@ -52,6 +56,41 @@ from ..walk_forward import run_walk_forward, summarize_walk_forward
 CORPUS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "sample_docs"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 TICKER = "ACME"
+
+# Internal-only URL of the trader Container App (Azure Container Apps
+# environment-local DNS -- never reachable from the public internet), set
+# only in the Azure deployment. Unset locally, where the autonomous loop
+# is just run directly (`python -m quantml.autonomous`) rather than
+# controlled through this dashboard.
+TRADER_INTERNAL_URL = os.environ.get("TRADER_INTERNAL_URL")
+
+_basic_auth = HTTPBasic(auto_error=False)
+
+
+def _require_auth(credentials: Optional[HTTPBasicCredentials] = Depends(_basic_auth)) -> None:
+    """Gate for the handful of endpoints that DO something (place a
+    trade, start/stop the bot) rather than just report on it. Everything
+    read-only -- performance, trade history, model metrics -- stays fully
+    public on purpose, so the dashboard works as a portfolio piece anyone
+    can view without a login.
+
+    A no-op (open) when DASHBOARD_USERNAME/DASHBOARD_PASSWORD aren't set
+    in the environment, which is the local-dev default. Read env vars on
+    every call rather than caching them at import time, so a value
+    exported after the process starts (or in tests via monkeypatch) still
+    takes effect."""
+    username = os.environ.get("DASHBOARD_USERNAME")
+    password = os.environ.get("DASHBOARD_PASSWORD")
+    if not username or not password:
+        return
+
+    valid = (
+        credentials is not None
+        and secrets.compare_digest(credentials.username, username)
+        and secrets.compare_digest(credentials.password, password)
+    )
+    if not valid:
+        raise HTTPException(status_code=401, detail="Authentication required", headers={"WWW-Authenticate": "Basic"})
 
 # --- cli.py's recipe, reused verbatim so every endpoint's numbers line up
 # with the README's documented CLI output. ---------------------------------
@@ -224,22 +263,14 @@ def predict_ml_signal(ticker: str = Query(default="AAPL"), period: str = Query(d
     }
 
 
-# --- On-demand trading + autonomous-loop activity -----------------------
+# --- On-demand trading + autonomous-loop control -------------------------
 #
 # /api/trade/run actually submits a real order to Alpaca's PAPER API (fake
-# money, real broker, real live price) when it can -- it's the "run
-# button." It's also the one endpoint in this dashboard that's safe to
-# ship in code but NOT safe to expose un-gated on a public, unauthenticated
-# deployment: this dashboard has no auth (see README's honest
-# limitations), so anyone with the URL could otherwise trigger real paper
-# orders on the account owner's behalf. The actual gate here is that the
-# deployed Azure container has no ALPACA_* credentials configured (only a
-# local `python/.env` does) -- PaperTradingError below is what a caller
-# hitting this on the live dashboard will always get, by omission, until
-# a real auth story is added (see Roadmap). This is deliberate, not an
-# oversight: don't add ALPACA_* secrets to the Azure deployment without
-# adding auth first.
-@app.post("/api/trade/run")
+# money, real broker, real live price) -- it's the "run" button, and it's
+# the one endpoint that DOES something rather than just reports, so it's
+# the one gated by _require_auth (see that function's docstring). Every
+# read-only endpoint below stays public.
+@app.post("/api/trade/run", dependencies=[Depends(_require_auth)])
 def run_trade(
     ticker: str = Query(default="AAPL"),
     qty_per_unit: int = Query(default=10, ge=1, le=1000),
@@ -293,12 +324,65 @@ def explain_ml_signal(ticker: str = Query(default="AAPL"), period: str = Query(d
 
 @app.get("/api/autonomous/activity")
 def get_autonomous_activity(n: int = Query(default=50, ge=1, le=200)) -> dict:
-    """Recent activity from the LOCAL autonomous continuous-learning loop
-    (quantml/autonomous.py) -- empty if it has never been run on this
-    machine. That loop is intentionally not something this deployed
-    dashboard runs itself (see autonomous.py's module docstring for why);
-    this endpoint just surfaces its log file if one exists alongside it."""
+    """Recent activity from the autonomous continuous-learning loop
+    (quantml/autonomous.py) -- empty if it has never run on this machine.
+    Locally this reads the loop's log file directly (same process/disk).
+    On Azure, the loop instead runs in a separate, internal-only trader
+    Container App (see trader_service.py) that writes this same log file
+    inside its own container -- this dashboard has no access to that
+    container's filesystem, so on Azure this endpoint reflects whatever
+    is on THIS container's disk, which is nothing unless the loop was
+    also run locally. Use /api/autonomous/trades and /api/autonomous/
+    equity for the Azure deployment's real activity instead, since those
+    come from Alpaca directly rather than a local file."""
     return {"activity": autonomous.recent_activity(n)}
+
+
+# --- Autonomous loop start/stop -------------------------------------------
+#
+# These control the trader Container App's actual running state via its
+# internal-only /pause and /resume endpoints (see trader_service.py) --
+# not reachable from the public internet, only from other apps in the
+# same Container Apps environment. Gated by _require_auth: unlike the
+# read-only endpoints above, these DO something (start or stop real paper
+# trading), so they're the other half of "run" and "stop" behind a
+# password, alongside /api/trade/run.
+
+
+@app.get("/api/autonomous/status")
+def get_autonomous_status() -> dict:
+    if not TRADER_INTERNAL_URL:
+        return {"configured": False, "running": None}
+    try:
+        r = http.get(f"{TRADER_INTERNAL_URL}/status", timeout=5)
+        r.raise_for_status()
+        return {"configured": True, "running": not r.json()["paused"]}
+    except http.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Trader service unreachable: {e}") from e
+
+
+@app.post("/api/autonomous/start", dependencies=[Depends(_require_auth)])
+def start_autonomous() -> dict:
+    if not TRADER_INTERNAL_URL:
+        raise HTTPException(status_code=503, detail="No trader service configured on this deployment.")
+    try:
+        r = http.post(f"{TRADER_INTERNAL_URL}/resume", timeout=5)
+        r.raise_for_status()
+    except http.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Trader service unreachable: {e}") from e
+    return {"running": True}
+
+
+@app.post("/api/autonomous/stop", dependencies=[Depends(_require_auth)])
+def stop_autonomous() -> dict:
+    if not TRADER_INTERNAL_URL:
+        raise HTTPException(status_code=503, detail="No trader service configured on this deployment.")
+    try:
+        r = http.post(f"{TRADER_INTERNAL_URL}/pause", timeout=5)
+        r.raise_for_status()
+    except http.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Trader service unreachable: {e}") from e
+    return {"running": False}
 
 
 @app.get("/api/autonomous/trades")

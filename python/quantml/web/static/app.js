@@ -318,6 +318,39 @@ function tableFrom(rows, columns) {
   return `<table class="data-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
+async function loadBotStatus() {
+  const tile = document.getElementById("bot-status-tile");
+  try {
+    const d = await getJSON("/api/autonomous/status");
+    if (!d.configured) {
+      tile.innerHTML = `<span class="label">Bot status</span><span class="value">not deployed here</span>`;
+      document.getElementById("bot-start-btn").disabled = true;
+      document.getElementById("bot-stop-btn").disabled = true;
+      return;
+    }
+    tile.innerHTML = `<span class="label">Bot status</span><span class="value">${d.running ? "running" : "stopped"}</span>`;
+    tile.className = "stat-tile" + (d.running ? " group" : "");
+  } catch (e) {
+    tile.innerHTML = `<span class="label">Bot status</span><span class="value">unknown</span>`;
+  }
+}
+
+async function setBotRunning(shouldRun) {
+  const note = document.getElementById("bot-control-note");
+  note.textContent = shouldRun ? "Starting..." : "Stopping...";
+  try {
+    const r = await fetch(shouldRun ? "/api/autonomous/start" : "/api/autonomous/stop", { method: "POST" });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error(body.detail || `${r.status}`);
+    }
+    note.textContent = "";
+    loadBotStatus().catch(console.error);
+  } catch (e) {
+    note.textContent = e.message;
+  }
+}
+
 async function loadEquity() {
   const chartContainer = document.getElementById("equity-chart");
   const statsRow = document.getElementById("equity-stats");
@@ -434,11 +467,16 @@ document.addEventListener("DOMContentLoaded", () => {
   loadEquity().catch(console.error);
   loadTrades().catch(console.error);
   loadGenerations().catch(console.error);
+  loadBotStatus().catch(console.error);
   setInterval(() => {
     loadEquity().catch(console.error);
     loadTrades().catch(console.error);
     loadGenerations().catch(console.error);
+    loadBotStatus().catch(console.error);
   }, 30000);
+
+  document.getElementById("bot-start-btn").addEventListener("click", () => setBotRunning(true));
+  document.getElementById("bot-stop-btn").addEventListener("click", () => setBotRunning(false));
 
   loadExplain("AAPL").catch(console.error);
 

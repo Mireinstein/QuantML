@@ -93,7 +93,14 @@
 
     <section class="panel" id="panel-bot-performance">
       <h2>Bot trading performance</h2>
-      <p class="sub">What the autonomous bot has actually done -- pulled straight from the Alpaca paper account, not a simulation. Start it once (<code>python -m quantml.autonomous --ticker AAPL</code>) and this section reports on it; nothing here requires you to place a trade yourself.</p>
+      <p class="sub">What the autonomous bot has actually done -- pulled straight from the Alpaca paper account, not a simulation. Everything below is public and visible to anyone; only starting/stopping the bot requires a password.</p>
+
+      <div class="stat-row" id="bot-control">
+        <span id="bot-status-tile" class="stat-tile"><span class="label">Bot status</span><span class="value">checking...</span></span>
+        <button id="bot-start-btn" type="button">Start</button>
+        <button id="bot-stop-btn" type="button" class="secondary">Stop</button>
+      </div>
+      <div id="bot-control-note" class="note"></div>
 
       <h3 style="margin-top:12px">Account equity over time</h3>
       <div class="chart-wrap" id="equity-chart"></div>

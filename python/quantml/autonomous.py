@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
 import time
 import traceback
 from datetime import datetime, timezone
@@ -71,6 +72,31 @@ from .paper_trading import PaperTradingError, get_position, submit_market_order
 LOG_PATH = ML_DIR / "autonomous_log.jsonl"
 STATE_PATH = ML_DIR / "autonomous_state.json"
 MAX_LOG_LINES_RETURNED = 200
+
+
+class RunControl:
+    """Thread-safe pause/resume flag for `run()`. Optional -- plain CLI
+    use (`python -m quantml.autonomous`) never needs one, and `run()`
+    behaves exactly as before when `control` is None. Exists so
+    trader_service.py can run the loop in a background thread while a
+    tiny FastAPI app in the same process exposes /pause and /resume for
+    the dashboard's "start"/"stop" buttons to call, without either side
+    needing to kill and restart the process (which would lose
+    `autonomous_state.json`'s replay position and generation count)."""
+
+    def __init__(self, paused: bool = False):
+        self._lock = threading.Lock()
+        self._paused = paused
+
+    @property
+    def paused(self) -> bool:
+        with self._lock:
+            return self._paused
+
+    @paused.setter
+    def paused(self, value: bool) -> None:
+        with self._lock:
+            self._paused = value
 
 
 def _log(event: dict) -> dict:
@@ -172,6 +198,7 @@ def run(
     retrain_every: int = 15,
     max_cycles: int | None = None,
     dry_run: bool = False,
+    control: RunControl | None = None,
 ) -> None:
     prices = load_real_ohlcv(ticker, period="5y")
     df = build_features_and_labels(prices)
@@ -214,8 +241,25 @@ def run(
     state = _load_state()
     cycles_since_retrain = 0
     cycle = 0
+    loop_passes = 0
+    was_paused = False
 
-    while max_cycles is None or cycle < max_cycles:
+    # `loop_passes` (every wake-up, paused or not) bounds `max_cycles`,
+    # not `cycle` (only active trading attempts) -- a paused loop never
+    # increments `cycle`, so bounding on `cycle` here would spin forever
+    # whenever `control.paused` starts (or stays) true.
+    while max_cycles is None or loop_passes < max_cycles:
+        loop_passes += 1
+        if control is not None and control.paused:
+            if not was_paused:
+                _log({"event": "loop_paused"})
+                was_paused = True
+            time.sleep(cycle_seconds)
+            continue
+        if was_paused:
+            _log({"event": "loop_resumed"})
+            was_paused = False
+
         cycle += 1
         try:
             model = load_best_model()

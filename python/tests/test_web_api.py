@@ -136,6 +136,134 @@ def test_explain_rejects_a_ticker_with_no_history(client, monkeypatch):
     assert r.status_code in (422, 503)
 
 
+# --- Auth on the action endpoints only -------------------------------------
+
+
+def test_trade_run_open_when_dashboard_password_unset(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.delenv("DASHBOARD_USERNAME", raising=False)
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+    monkeypatch.setattr(app_module, "load_best_model", _raise_not_trained)
+    r = client.post("/api/trade/run?ticker=AAPL")
+    assert r.status_code == 503  # reached the real handler, not blocked at 401
+
+
+def test_trade_run_requires_auth_when_configured(client, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_USERNAME", "admire")
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret123")
+    r = client.post("/api/trade/run?ticker=AAPL")
+    assert r.status_code == 401
+
+
+def test_trade_run_rejects_wrong_credentials(client, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_USERNAME", "admire")
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret123")
+    r = client.post("/api/trade/run?ticker=AAPL", auth=("admire", "wrong-password"))
+    assert r.status_code == 401
+
+
+def test_trade_run_accepts_correct_credentials(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setenv("DASHBOARD_USERNAME", "admire")
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret123")
+    monkeypatch.setattr(app_module, "load_best_model", _raise_not_trained)
+    r = client.post("/api/trade/run?ticker=AAPL", auth=("admire", "secret123"))
+    assert r.status_code == 503  # past auth, reached the real (stubbed) handler
+
+
+def test_read_only_endpoints_stay_open_even_when_auth_is_configured(client, monkeypatch):
+    """The whole point: performance/metrics/history must never require a
+    login, only the endpoints that actually place a trade or start/stop
+    the bot."""
+    monkeypatch.setenv("DASHBOARD_USERNAME", "admire")
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret123")
+    for path in ("/api/dashboard", "/api/autonomous/activity", "/api/autonomous/status", "/"):
+        r = client.get(path)
+        assert r.status_code != 401, f"{path} must not require auth"
+
+
+# --- Autonomous start/stop --------------------------------------------
+
+
+def test_autonomous_status_reports_unconfigured_without_trader_url(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "TRADER_INTERNAL_URL", None)
+    r = client.get("/api/autonomous/status")
+    assert r.status_code == 200
+    assert r.json() == {"configured": False, "running": None}
+
+
+def test_autonomous_start_returns_503_without_trader_url(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "TRADER_INTERNAL_URL", None)
+    r = client.post("/api/autonomous/start")
+    assert r.status_code == 503
+
+
+def test_autonomous_start_requires_auth_when_configured(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "TRADER_INTERNAL_URL", "http://trader.internal")
+    monkeypatch.setenv("DASHBOARD_USERNAME", "admire")
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "secret123")
+    r = client.post("/api/autonomous/start")
+    assert r.status_code == 401
+
+
+def test_autonomous_start_proxies_to_trader_service(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "TRADER_INTERNAL_URL", "http://trader.internal")
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"paused": False}
+
+    calls = []
+
+    def _fake_post(url, timeout):  # noqa: ARG001
+        calls.append(url)
+        return _FakeResponse()
+
+    monkeypatch.setattr(app_module.http, "post", _fake_post)
+    r = client.post("/api/autonomous/start")
+    assert r.status_code == 200
+    assert r.json() == {"running": True}
+    assert calls == ["http://trader.internal/resume"]
+
+
+def test_autonomous_stop_proxies_to_trader_service(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "TRADER_INTERNAL_URL", "http://trader.internal")
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"paused": True}
+
+    calls = []
+
+    def _fake_post(url, timeout):  # noqa: ARG001
+        calls.append(url)
+        return _FakeResponse()
+
+    monkeypatch.setattr(app_module.http, "post", _fake_post)
+    r = client.post("/api/autonomous/stop")
+    assert r.status_code == 200
+    assert r.json() == {"running": False}
+    assert calls == ["http://trader.internal/pause"]
+
+
 # --- On-demand trading + autonomous activity ------------------------------
 
 
