@@ -72,6 +72,25 @@
         <button type="submit">Predict</button>
       </form>
       <div id="ml-predict-result" class="stat-row"></div>
+
+      <h3 style="margin-top:20px">Run trade now</h3>
+      <p class="sub">Submits a REAL order to a real Alpaca <strong>paper</strong> account (fake money, real broker, real live price) sized to the model's current prediction. Only works if this server has Alpaca paper API credentials configured (see README) -- the public Azure deployment deliberately does not.</p>
+      <form class="ml-form" id="trade-form">
+        <label>Ticker
+          <input type="text" id="trade-ticker" value="AAPL" required />
+        </label>
+        <label>Shares per full [-1,1] position
+          <input type="number" id="trade-qty" value="10" min="1" max="1000" />
+        </label>
+        <button type="submit">Run trade now</button>
+      </form>
+      <div id="trade-result" class="stat-row"></div>
+    </section>
+
+    <section class="panel" id="panel-autonomous">
+      <h2>Live autonomous trading (local only)</h2>
+      <p class="sub">Activity from the local continuous-learning + paper-trading loop (<code>python -m quantml.autonomous</code>), if it's running on this machine. It replays real historical data at an accelerated pace, trades each cycle, and periodically retrains + gates + promotes a new model -- see autonomous.py for why replay, not live overnight data.</p>
+      <div id="autonomous-activity"></div>
     </section>
   </main>
 

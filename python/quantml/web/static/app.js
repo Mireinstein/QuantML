@@ -147,6 +147,15 @@ async function getJSON(url) {
   return r.json();
 }
 
+async function postJSON(url) {
+  const r = await fetch(url, { method: "POST" });
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.detail || `${url} -> ${r.status}`);
+  }
+  return r.json();
+}
+
 // --- Section loaders -----------------------------------------------------
 async function loadBacktest() {
   const d = await getJSON("/api/dashboard");
@@ -252,6 +261,65 @@ async function predictMlSignal(ticker) {
   }
 }
 
+async function runTrade(ticker, qtyPerUnit) {
+  const resultRow = document.getElementById("trade-result");
+  const confirmed = window.confirm(
+    `Submit a REAL order to your Alpaca PAPER account for ${ticker}, sized to the model's current prediction (up to ${qtyPerUnit} shares)? This is fake money, but it's a real order, not a dry run.`
+  );
+  if (!confirmed) return;
+
+  resultRow.innerHTML = `<div class="note">Submitting...</div>`;
+  try {
+    const d = await postJSON(
+      `/api/trade/run?ticker=${encodeURIComponent(ticker)}&qty_per_unit=${encodeURIComponent(qtyPerUnit)}`
+    );
+    resultRow.innerHTML = "";
+    resultRow.appendChild(statTile("Ticker", d.ticker));
+    resultRow.appendChild(statTile("Last close", "$" + fmt(d.last_close, 2)));
+    resultRow.appendChild(statTile("Current shares", d.current_shares));
+    resultRow.appendChild(statTile("Target shares", d.target_shares));
+    resultRow.appendChild(
+      statTile("Order", d.delta === 0 ? "already at target" : (typeof d.order === "object" ? `${d.order.side} ${d.order.qty} (${d.order.status})` : d.order))
+    );
+  } catch (e) {
+    resultRow.innerHTML = `<div class="note">${e.message}</div>`;
+  }
+}
+
+async function loadAutonomousActivity() {
+  const container = document.getElementById("autonomous-activity");
+  try {
+    const d = await getJSON("/api/autonomous/activity?n=20");
+    if (!d.activity.length) {
+      container.innerHTML = `<div class="note">Not running on this machine right now -- start it with \`python -m quantml.autonomous --ticker AAPL\` from python/.</div>`;
+      return;
+    }
+    const rows = d.activity
+      .slice()
+      .reverse()
+      .map((e) => {
+        if (e.event === "cycle") {
+          const orderText = typeof e.order === "object" && e.order ? `${e.order.side} ${e.order.qty}` : e.order || "no order";
+          return `<div class="stat-tile"><span class="label">${e.replayed_day} (gen ${e.generation})</span><span class="value">P(up)=${fmt(e.predicted_proba_up, 2)} pos=${fmt(e.suggested_position, 2)} -- ${orderText}</span></div>`;
+        }
+        if (e.event === "model_promoted") {
+          return `<div class="stat-tile group"><span class="label">Model promoted (gen ${e.generation})</span><span class="value">${e.model_type}, AUC ${fmt(e.auc, 3)}, Sharpe ${fmt(e.sharpe, 3)}</span></div>`;
+        }
+        if (e.event === "retrain_rejected") {
+          return `<div class="stat-tile"><span class="label">Retrain rejected</span><span class="value">${e.reasons.join("; ")}</span></div>`;
+        }
+        if (e.event === "cycle_error") {
+          return `<div class="stat-tile"><span class="label">Cycle error</span><span class="value">${e.error}</span></div>`;
+        }
+        return `<div class="stat-tile"><span class="label">${e.event}</span><span class="value"></span></div>`;
+      })
+      .join("");
+    container.innerHTML = `<div class="stat-row">${rows}</div>`;
+  } catch (e) {
+    container.innerHTML = `<div class="note">${e.message}</div>`;
+  }
+}
+
 // --- Boot ------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
   loadBacktest().catch(console.error);
@@ -260,10 +328,19 @@ document.addEventListener("DOMContentLoaded", () => {
   loadVolatility().catch(console.error);
   loadRiskLimits().catch(console.error);
   loadMlSignal().catch(console.error);
+  loadAutonomousActivity().catch(console.error);
+  setInterval(() => loadAutonomousActivity().catch(console.error), 15000);
 
   document.getElementById("ml-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const ticker = document.getElementById("ml-ticker").value.trim().toUpperCase();
     if (ticker) predictMlSignal(ticker).catch(console.error);
+  });
+
+  document.getElementById("trade-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const ticker = document.getElementById("trade-ticker").value.trim().toUpperCase();
+    const qty = parseInt(document.getElementById("trade-qty").value, 10) || 10;
+    if (ticker) runTrade(ticker, qty).catch(console.error);
   });
 });

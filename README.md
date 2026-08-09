@@ -214,6 +214,59 @@ paper position, and submits whatever market order closes the gap (or just
 prints what it would do, with `--dry-run`). Verified end-to-end against a
 real Alpaca paper account, not just mocked in tests.
 
+The dashboard also has an on-demand version of this: a **"Run trade now"**
+button (`POST /api/trade/run`) that does the same rebalance from the
+browser. It's deliberately not exposed on the live Azure deployment in
+any dangerous way -- see the security note in `web/app.py` above that
+endpoint: this dashboard has no auth, so a trade-trigger button only
+stays safe because the deployed container has no Alpaca credentials
+configured at all (only a local `python/.env` does). Don't add Alpaca
+secrets to the Azure deployment without adding auth first.
+
+### Autonomous continuous-learning loop (`autonomous.py`, local only)
+
+    python -m quantml.autonomous --ticker AAPL
+
+A single-shot rebalance (above) isn't "continuously learning." This is:
+a loop that trades every cycle *and* periodically retrains the model on
+what it's learned since, gated the same way a production model-promotion
+pipeline would.
+
+Honest framing on what "continuous" means here: a real daily bar only
+updates once per real trading day, so a loop honestly waiting on live
+data would sit idle almost the entire time -- especially overnight, when
+markets are closed. Instead, this loop **replays real historical data**
+the model hasn't been evaluated against yet, one trading day at a time,
+at an accelerated cadence (`--cycle-seconds`, default 90s per day). It is
+not claiming to trade on live data that doesn't exist at 3am.
+
+Each cycle: get the live model's prediction for the next replayed day,
+size and submit a real order to the Alpaca **paper** account (same
+mechanics as `paper_runner.py`), then -- since this is a replay of known
+history -- immediately learn that day's actual realized outcome. Every
+`--retrain-every` cycles (default 15), it retrains on an **expanding
+window** of the same historical series (now including days that were
+held out when the loop started, since their outcome is now known),
+evaluates the candidate through the *exact same* quality gate
+`ml/eval_harness.py` uses (AUC/Sharpe floors, regression vs. the current
+baseline), and only **promotes** it -- overwriting the live model files
+-- if it passes. A candidate that fails is logged and discarded; the
+previously-promoted model keeps serving. This is the shadow-eval-before-
+promotion pattern real MLOps systems use, compressed into one run instead
+of days.
+
+Each cycle also runs a **feature drift check** (same z-score approach as
+TenantIQ's `ml/serve.py` `/monitoring` endpoint): how far this day's
+feature values are from the training distribution's mean, flagging
+anything past 3 standard deviations.
+
+Every cycle is appended to `ml/autonomous_log.jsonl` (gitignored, machine-
+local) and shown live on the dashboard's "Live autonomous trading" panel
+(`GET /api/autonomous/activity`) if the dashboard is also running on the
+same machine. A single cycle's failure (a transient network error, a
+retrain that raises) is logged and the loop moves on rather than dying --
+see the module docstring for the full design writeup.
+
 ## Deployment
 
 **Docker** (`python/Dockerfile`): containerizes the FastAPI dashboard.
@@ -356,6 +409,19 @@ LoRA run on a CPU in about 2 minutes, not a cherry-picked number.
   role, which deliberately excludes assigning RBAC roles to other
   principals -- see `terraform/registry.tf`). Fine for a demo, not how
   you'd run this for real users.
+- `/api/trade/run` (the dashboard's "run trade now" button) has no
+  authentication of its own -- it's only safe on the public Azure
+  deployment because that container has no Alpaca credentials configured,
+  so every call there fails closed with a 502. That's a load-bearing
+  omission, not a real access control; adding real auth is a prerequisite
+  for ever putting trading credentials in that environment.
+- `autonomous.py`'s continuous learning isn't learning from genuinely new
+  market data -- it replays a fixed historical download from when the
+  loop started (see its module docstring). An expanding-window retrain on
+  data the model has already technically "seen" once (as held-out test
+  data) is a reasonable stand-in for demonstrating the retrain-eval-
+  promote loop, but it's not the same as a system that ingests real new
+  bars every trading day.
 
 ## Technologies
 
@@ -380,11 +446,16 @@ LoRA run on a CPU in about 2 minutes, not a cherry-picked number.
   MLflow-tracked, gated by its own standalone eval harness
 - **Web**: FastAPI, vanilla-JS hand-rolled inline-SVG charting (no CDN
   dependencies)
-- **Deployment**: Docker (train-if-missing container entrypoint)
+- **Deployment**: Docker (train-at-build-time image), Terraform-provisioned
+  Azure Container Apps + Container Registry
 - **Live market integration**: real historical data via `yfinance`, a REST
   client for a real broker's paper-trading API (Alpaca) with a hard-coded
   sandbox endpoint, `.env`-based credential loading, and loud-not-silent
   error handling
+- **Continuous learning / online ML**: an accelerated-replay autonomous
+  loop (`autonomous.py`) that trades every cycle and periodically
+  retrains on an expanding window, gated by the same promotion check as
+  a manual retrain, with per-cycle feature drift monitoring
 - **Testing**: pytest (93 tests covering feature engineering, both trading
   model families including PyTorch save/load round-trips, the strategy's
   no-lookahead shift behavior, LoRA fine-tuning and its eval-harness gate,

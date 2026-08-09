@@ -117,6 +117,63 @@ def _raise_not_trained(*args, **kwargs):
     raise ModelNotTrainedError("no model for this test")
 
 
+# --- On-demand trading + autonomous activity ------------------------------
+
+
+def test_run_trade_returns_503_when_no_model_trained(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "load_best_model", _raise_not_trained)
+    r = client.post("/api/trade/run?ticker=AAPL")
+    assert r.status_code == 503
+
+
+def test_run_trade_returns_502_on_paper_trading_error(client, monkeypatch):
+    import quantml.web.app as app_module
+    from quantml.paper_trading import PaperTradingError
+
+    monkeypatch.setattr(app_module, "load_best_model", lambda: object())
+
+    def _raise_paper_error(*args, **kwargs):
+        raise PaperTradingError("no credentials configured")
+
+    monkeypatch.setattr(app_module, "rebalance", _raise_paper_error)
+    r = client.post("/api/trade/run?ticker=AAPL")
+    assert r.status_code == 502
+
+
+def test_run_trade_serializes_order_result(client, monkeypatch):
+    import quantml.web.app as app_module
+    from quantml.paper_trading import OrderResult
+
+    monkeypatch.setattr(app_module, "load_best_model", lambda: object())
+    monkeypatch.setattr(
+        app_module,
+        "rebalance",
+        lambda *a, **k: {
+            "ticker": "AAPL",
+            "last_close": 200.0,
+            "current_shares": 0,
+            "target_shares": 5,
+            "delta": 5,
+            "order": OrderResult(id="1", symbol="AAPL", qty=5, side="buy", status="accepted"),
+        },
+    )
+    r = client.post("/api/trade/run?ticker=AAPL")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["order"] == {"id": "1", "symbol": "AAPL", "qty": 5, "side": "buy", "status": "accepted"}
+
+
+def test_autonomous_activity_empty_when_never_run(client, monkeypatch, tmp_path):
+    from quantml import autonomous
+
+    monkeypatch.setattr(autonomous, "LOG_PATH", tmp_path / "does_not_exist.jsonl")
+    r = client.get("/api/autonomous/activity")
+    assert r.status_code == 200
+    assert r.json() == {"activity": []}
+
+
 # --- Static frontend -----------------------------------------------------
 
 

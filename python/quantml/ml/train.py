@@ -74,6 +74,81 @@ def evaluate_on_backtest(model, prices, test_start_date, run_name: str, params: 
     return backtest_summary
 
 
+def train_candidates(prices) -> tuple[dict, "pd.Timestamp"]:
+    """Trains all three model families on the same chronological split of
+    `prices` and returns ({model_name: (model, auc, backtest_summary)},
+    test_start_date) -- the pure "given data, produce candidates" step,
+    with no argument parsing or disk writes, so it's reusable by both the
+    CLI (below) and the autonomous continuous-learning loop
+    (autonomous.py), which retrains on an expanding window without
+    shelling back out to this script."""
+    df = build_features_and_labels(prices)
+    split_idx = int(len(df) * (1 - TEST_FRACTION))
+    train_df, test_df = df.iloc[:split_idx], df.iloc[split_idx:]
+    test_start_date = test_df.index[0]
+
+    X_train, y_train = train_df[FEATURE_COLUMNS], train_df[LABEL_COLUMN]
+    X_test, y_test = test_df[FEATURE_COLUMNS], test_df[LABEL_COLUMN]
+
+    candidates = {}
+
+    logistic = SklearnSignalModel(build_logistic_baseline()).fit(X_train, y_train)
+    logistic_auc = roc_auc_score(y_test, logistic.predict_proba(X_test))
+    logistic_bt = evaluate_on_backtest(
+        logistic, prices, test_start_date, "logistic_regression", {"model": "logistic_regression"}
+    )
+    candidates["logistic_regression"] = (logistic, logistic_auc, logistic_bt)
+
+    gbm = SklearnSignalModel(build_gradient_boosting()).fit(X_train, y_train)
+    gbm_auc = roc_auc_score(y_test, gbm.predict_proba(X_test))
+    gbm_bt = evaluate_on_backtest(
+        gbm, prices, test_start_date, "gradient_boosting", {"model": "gradient_boosting", "max_iter": 200}
+    )
+    candidates["gradient_boosting"] = (gbm, gbm_auc, gbm_bt)
+
+    gru = TorchSignalModel().fit(X_train, y_train)
+    gru_auc = roc_auc_score(y_test, gru.predict_proba(X_test))
+    gru_bt = evaluate_on_backtest(
+        gru, prices, test_start_date, "gru", {"model": "gru", "window": gru.window, "epochs": gru.epochs}
+    )
+    candidates["gru"] = (gru, gru_auc, gru_bt)
+
+    return candidates, test_start_date
+
+
+def select_best(candidates: dict) -> tuple[str, object, float, dict]:
+    # Selection metric: held-out Sharpe, not AUC -- see module docstring.
+    best_name = max(candidates, key=lambda name: candidates[name][2]["sharpe"])
+    best_model, best_auc, best_bt = candidates[best_name]
+    return best_name, best_model, best_auc, best_bt
+
+
+def save_model(best_name: str, best_model, best_auc: float, best_bt: dict, test_start_date, data_source: str) -> dict:
+    """Persists the winning model + metadata as the LIVE model everything
+    else (`registry.load_best_model()`) reads. This is the "promote" step
+    -- callers that want to gate a candidate first (autonomous.py) should
+    evaluate it via ml/eval_harness.py *before* calling this."""
+    if best_name == "gru":
+        best_model.save(HERE / "model.pt")
+        model_file = "model.pt"
+    else:
+        best_model.save(HERE / "model.joblib")
+        model_file = "model.joblib"
+
+    metadata = {
+        "version": next_version(),
+        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "model_type": best_name,
+        "model_file": model_file,
+        "held_out_auc": best_auc,
+        "held_out_backtest": best_bt,
+        "test_start_date": str(test_start_date.date()) if hasattr(test_start_date, "date") else str(test_start_date),
+        "data_source": data_source,
+    }
+    METADATA_PATH.write_text(json.dumps(metadata, indent=2, default=str))
+    return metadata
+
+
 def main() -> None:
     import argparse
 
@@ -90,75 +165,17 @@ def main() -> None:
         prices = generate_synthetic_ohlcv(n_days=1500, seed=7)
         print(f"Training on synthetic data ({len(prices)} trading days)")
 
-    df = build_features_and_labels(prices)
-    split_idx = int(len(df) * (1 - TEST_FRACTION))
-    train_df, test_df = df.iloc[:split_idx], df.iloc[split_idx:]
-    test_start_date = test_df.index[0]
+    candidates, test_start_date = train_candidates(prices)
+    for name, (_, auc, bt) in candidates.items():
+        print(f"\n{name}: held-out AUC {auc:.3f}")
+        print(f"  Held-out backtest: {bt}")
 
-    X_train, y_train = train_df[FEATURE_COLUMNS], train_df[LABEL_COLUMN]
-    X_test, y_test = test_df[FEATURE_COLUMNS], test_df[LABEL_COLUMN]
-    print(
-        f"Train: {len(train_df)} days ({train_df.index[0].date()} to {train_df.index[-1].date()}), "
-        f"{y_train.mean():.1%} up-days"
-    )
-    print(
-        f"Test:  {len(test_df)} days ({test_df.index[0].date()} to {test_df.index[-1].date()}), "
-        f"{y_test.mean():.1%} up-days"
-    )
-
-    candidates = {}
-
-    logistic = SklearnSignalModel(build_logistic_baseline()).fit(X_train, y_train)
-    logistic_auc = roc_auc_score(y_test, logistic.predict_proba(X_test))
-    print(f"\nLogistic regression: held-out AUC {logistic_auc:.3f}")
-    logistic_bt = evaluate_on_backtest(
-        logistic, prices, test_start_date, "logistic_regression", {"model": "logistic_regression"}
-    )
-    print(f"  Held-out backtest: {logistic_bt}")
-    candidates["logistic_regression"] = (logistic, logistic_auc, logistic_bt)
-
-    gbm = SklearnSignalModel(build_gradient_boosting()).fit(X_train, y_train)
-    gbm_auc = roc_auc_score(y_test, gbm.predict_proba(X_test))
-    print(f"\nGradient boosting: held-out AUC {gbm_auc:.3f}")
-    gbm_bt = evaluate_on_backtest(
-        gbm, prices, test_start_date, "gradient_boosting", {"model": "gradient_boosting", "max_iter": 200}
-    )
-    print(f"  Held-out backtest: {gbm_bt}")
-    candidates["gradient_boosting"] = (gbm, gbm_auc, gbm_bt)
-
-    gru = TorchSignalModel().fit(X_train, y_train)
-    gru_auc = roc_auc_score(y_test, gru.predict_proba(X_test))
-    print(f"\nGRU (PyTorch): held-out AUC {gru_auc:.3f}")
-    gru_bt = evaluate_on_backtest(
-        gru, prices, test_start_date, "gru", {"model": "gru", "window": gru.window, "epochs": gru.epochs}
-    )
-    print(f"  Held-out backtest: {gru_bt}")
-    candidates["gru"] = (gru, gru_auc, gru_bt)
-
-    # Selection metric: held-out Sharpe, not AUC -- see module docstring.
-    best_name = max(candidates, key=lambda name: candidates[name][2]["sharpe"])
-    best_model, best_auc, best_bt = candidates[best_name]
+    best_name, best_model, best_auc, best_bt = select_best(candidates)
     print(f"\nSelected: {best_name} (held-out Sharpe {best_bt['sharpe']}, AUC {best_auc:.3f})")
 
-    if best_name == "gru":
-        best_model.save(HERE / "model.pt")
-        model_file = "model.pt"
-    else:
-        best_model.save(HERE / "model.joblib")
-        model_file = "model.joblib"
-
-    metadata = {
-        "version": next_version(),
-        "trained_at": datetime.now(timezone.utc).isoformat(),
-        "model_type": best_name,
-        "model_file": model_file,
-        "held_out_auc": best_auc,
-        "held_out_backtest": best_bt,
-        "test_start_date": str(test_start_date.date()),
-        "data_source": f"real:{args.ticker}:{args.period}" if args.real_data else "synthetic",
-    }
-    METADATA_PATH.write_text(json.dumps(metadata, indent=2, default=str))
-    print(f"\nSaved {model_file} (version {metadata['version']})")
+    data_source = f"real:{args.ticker}:{args.period}" if args.real_data else "synthetic"
+    metadata = save_model(best_name, best_model, best_auc, best_bt, test_start_date, data_source)
+    print(f"\nSaved {metadata['model_file']} (version {metadata['version']})")
 
 
 if __name__ == "__main__":

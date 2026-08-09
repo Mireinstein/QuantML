@@ -31,15 +31,18 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .. import autonomous
 from ..data import generate_synthetic_ohlcv, load_real_ohlcv
 from ..engine import run_backtest
 from ..metrics import monte_carlo_var, summarize
 from ..ml.features import build_features
 from ..ml.registry import ModelNotTrainedError, load_best_model, load_metadata
+from ..paper_runner import rebalance
+from ..paper_trading import PaperTradingError
 from ..rag.retriever import Document, load_corpus
 from ..rag.signal import build_signal
 from ..risk import RiskLimits, apply_risk_limits
-from ..strategies import MovingAverageCrossover, SignalOverlayStrategy
+from ..strategies import MLSignalStrategy, MovingAverageCrossover, SignalOverlayStrategy
 from ..volatility import fit_garch, naive_rolling_vol
 from ..walk_forward import run_walk_forward, summarize_walk_forward
 
@@ -218,3 +221,52 @@ def predict_ml_signal(ticker: str = Query(default="AAPL"), period: str = Query(d
         "predicted_proba_up": proba_up,
         "suggested_position": max(-1.0, min(1.0, 2 * proba_up - 1)),
     }
+
+
+# --- On-demand trading + autonomous-loop activity -----------------------
+#
+# /api/trade/run actually submits a real order to Alpaca's PAPER API (fake
+# money, real broker, real live price) when it can -- it's the "run
+# button." It's also the one endpoint in this dashboard that's safe to
+# ship in code but NOT safe to expose un-gated on a public, unauthenticated
+# deployment: this dashboard has no auth (see README's honest
+# limitations), so anyone with the URL could otherwise trigger real paper
+# orders on the account owner's behalf. The actual gate here is that the
+# deployed Azure container has no ALPACA_* credentials configured (only a
+# local `python/.env` does) -- PaperTradingError below is what a caller
+# hitting this on the live dashboard will always get, by omission, until
+# a real auth story is added (see Roadmap). This is deliberate, not an
+# oversight: don't add ALPACA_* secrets to the Azure deployment without
+# adding auth first.
+@app.post("/api/trade/run")
+def run_trade(
+    ticker: str = Query(default="AAPL"),
+    qty_per_unit: int = Query(default=10, ge=1, le=1000),
+    dry_run: bool = Query(default=False),
+) -> dict:
+    try:
+        model = load_best_model()
+    except ModelNotTrainedError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    strategy = MLSignalStrategy(model=model, name="ml_signal")
+    try:
+        result = rebalance(ticker, strategy, qty_per_unit=qty_per_unit, dry_run=dry_run)
+    except PaperTradingError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    order = result["order"]
+    if hasattr(order, "id"):  # OrderResult dataclass -> plain dict for JSON
+        order = {"id": order.id, "symbol": order.symbol, "qty": order.qty, "side": order.side, "status": order.status}
+    result["order"] = order
+    return result
+
+
+@app.get("/api/autonomous/activity")
+def get_autonomous_activity(n: int = Query(default=50, ge=1, le=200)) -> dict:
+    """Recent activity from the LOCAL autonomous continuous-learning loop
+    (quantml/autonomous.py) -- empty if it has never been run on this
+    machine. That loop is intentionally not something this deployed
+    dashboard runs itself (see autonomous.py's module docstring for why);
+    this endpoint just surfaces its log file if one exists alongside it."""
+    return {"activity": autonomous.recent_activity(n)}
