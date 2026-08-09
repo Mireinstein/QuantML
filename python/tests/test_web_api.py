@@ -8,6 +8,17 @@ from fastapi.testclient import TestClient
 from quantml.web.app import app
 
 
+@pytest.fixture(autouse=True)
+def clean_dashboard_auth_env(monkeypatch):
+    # paper_trading.py loads python/.env at import time, which -- once a
+    # real developer has DASHBOARD_USERNAME/DASHBOARD_PASSWORD set there
+    # for an actual deployment -- would otherwise leak into every test's
+    # os.environ and turn auth on everywhere. Force it off by default;
+    # individual tests opt back in with monkeypatch.setenv.
+    monkeypatch.delenv("DASHBOARD_USERNAME", raising=False)
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+
+
 @pytest.fixture
 def client():
     with TestClient(app) as c:

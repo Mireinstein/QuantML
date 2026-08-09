@@ -419,6 +419,17 @@ async function loadGenerations() {
   }
 }
 
+function orderText(order) {
+  // `order` from a cycle log entry is one of: null (no order needed that
+  // cycle), a string ("DRY RUN -- ..."), {id, side, qty, status} (Alpaca
+  // accepted it), or {error} (Alpaca rejected it -- e.g. the wash-trade
+  // guard firing because a previous order is still open/unfilled).
+  if (!order) return "no order";
+  if (typeof order === "string") return order;
+  if (order.error) return `rejected: ${order.error}`;
+  return `${order.side} ${order.qty} (${order.status})`;
+}
+
 async function loadAutonomousActivity() {
   const container = document.getElementById("autonomous-activity");
   try {
@@ -432,8 +443,7 @@ async function loadAutonomousActivity() {
       .reverse()
       .map((e) => {
         if (e.event === "cycle") {
-          const orderText = typeof e.order === "object" && e.order ? `${e.order.side} ${e.order.qty}` : e.order || "no order";
-          return `<div class="stat-tile"><span class="label">${e.replayed_day} (gen ${e.generation})</span><span class="value">P(up)=${fmt(e.predicted_proba_up, 2)} pos=${fmt(e.suggested_position, 2)} -- ${orderText}</span></div>`;
+          return `<div class="stat-tile"><span class="label">${e.replayed_day} (gen ${e.generation})</span><span class="value">P(up)=${fmt(e.predicted_proba_up, 2)} pos=${fmt(e.suggested_position, 2)} -- ${orderText(e.order)}</span></div>`;
         }
         if (e.event === "model_promoted") {
           return `<div class="stat-tile group"><span class="label">Model promoted (gen ${e.generation})</span><span class="value">${e.model_type}, AUC ${fmt(e.auc, 3)}, Sharpe ${fmt(e.sharpe, 3)}</span></div>`;

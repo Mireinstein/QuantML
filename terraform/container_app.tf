@@ -140,11 +140,16 @@ resource "azurerm_container_app" "dashboard" {
         name        = "DASHBOARD_PASSWORD"
         secret_name = "dashboard-password"
       }
-      # http:// on purpose, not https:// -- traffic to this internal FQDN
-      # never leaves the Container Apps environment's own network.
+      # https:// -- Container Apps' internal ingress redirects plain HTTP
+      # to HTTPS, and that redirect silently turns a POST into a GET
+      # (standard redirect-following behavior), which broke /pause and
+      # /resume with a 405 the first time this was deployed with http://
+      # here. Traffic still never leaves the Container Apps environment's
+      # own network either way -- this only changes the URL scheme, not
+      # where the request can go.
       env {
         name  = "TRADER_INTERNAL_URL"
-        value = "http://${azurerm_container_app.trader.ingress[0].fqdn}"
+        value = "https://${azurerm_container_app.trader.ingress[0].fqdn}"
       }
     }
     min_replicas = 0
