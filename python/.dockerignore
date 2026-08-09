@@ -8,4 +8,7 @@ quantml/ml/model.pt
 quantml/ml/model_metadata.json
 quantml/ml/mlflow.db
 quantml/ml/mlruns/
+quantml/ml/autonomous_log.jsonl
+quantml/ml/autonomous_state.json
+quantml/ml/eval_baseline.json
 tests/
