@@ -46,7 +46,7 @@ from ..ml.features import FEATURE_COLUMNS, LABEL_COLUMN, build_features, build_f
 from ..ml.registry import ModelNotTrainedError, load_best_model, load_metadata
 from ..paper_runner import rebalance
 from ..paper_trading import PaperTradingError, get_portfolio_history, list_orders
-from ..rag.retriever import Document, load_corpus
+from ..rag.retriever import Document, EmbeddingRetriever, Retriever, load_corpus
 from ..rag.signal import build_signal
 from ..risk import RiskLimits, apply_risk_limits
 from ..strategies import MLSignalStrategy, MovingAverageCrossover, SignalOverlayStrategy
@@ -197,6 +197,34 @@ def get_ticker_search(q: str = Query(default="", max_length=64)) -> dict:
     data.py::search_tickers for why results are filtered to plain
     US-listed stock."""
     return {"results": search_tickers(q)}
+
+
+@app.get("/api/rag/search")
+def get_rag_search(q: str = Query(default="", max_length=200), top_k: int = Query(default=3, ge=1, le=10)) -> dict:
+    """Runs the same query through both retrieval techniques over the
+    sample document corpus, side by side: TF-IDF + cosine similarity
+    (classical IR) and real text embeddings + cosine similarity (semantic
+    retrieval -- catches phrasing that doesn't share TF-IDF's exact
+    keywords). See rag/retriever.py and rag/embeddings.py."""
+    if not q.strip():
+        return {"tfidf": [], "embedding": [], "embedding_backend": None}
+
+    docs = _load_corpus_cached()
+    tfidf_results = Retriever(docs).query(q, top_k=top_k)
+    embedding_retriever = EmbeddingRetriever(docs)
+    embedding_results = embedding_retriever.query(q, top_k=top_k)
+
+    def _shape(results):
+        return [
+            {"doc_id": d.doc_id, "ticker": d.ticker, "date": d.date, "score": float(s), "excerpt": d.text[:160]}
+            for d, s in results
+        ]
+
+    return {
+        "tfidf": _shape(tfidf_results),
+        "embedding": _shape(embedding_results),
+        "embedding_backend": getattr(embedding_retriever, "last_backend", None),
+    }
 
 
 # --- Dashboard endpoints (read-only, recompute-every-call) -----------------

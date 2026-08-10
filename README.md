@@ -88,13 +88,26 @@ strategy's position with an external signal series.
 
 ### 4. `python/quantml/rag/` — retrieval-augmented signal layer
 
-TF-IDF retrieval over a small bundled corpus of sample financial
-documents, turned into a per-day sentiment signal fed into
-`SignalOverlayStrategy`. Three scoring backends (`--sentiment-backend`):
-**lexicon** (deterministic keyword scoring), **llm** (a local Ollama
-model, structured output validated with pydantic), and **finetuned** (the
-LoRA-fine-tuned classifier below) — `llm` and `finetuned` fall back to
-the lexicon scorer if unreachable.
+Two retrieval techniques over a small bundled corpus of sample financial
+documents, both behind the same `.query(text, top_k)` interface:
+
+- **`Retriever`** — TF-IDF + cosine similarity, classical IR.
+- **`EmbeddingRetriever`** — real text embeddings + cosine similarity
+  (local Ollama `nomic-embed-text`, with a deterministic hashing-trick
+  fallback if Ollama isn't reachable — same graceful-degradation pattern
+  TenantIQ used for listing search). Doesn't cache the corpus embedding:
+  the query and the whole corpus are embedded together in one call every
+  time, guaranteeing they always come from the same backend — caching
+  the corpus separately would risk mixing 768-dim Ollama vectors with
+  256-dim hashing vectors if Ollama's availability changed between calls.
+  `GET /api/rag/search` runs a query through both side by side.
+
+Retrieved documents feed a per-day sentiment signal into
+`SignalOverlayStrategy`, with three scoring backends
+(`--sentiment-backend`): **lexicon** (deterministic keyword scoring),
+**llm** (a local Ollama model, structured output validated with
+pydantic), and **finetuned** (the LoRA-fine-tuned classifier below) —
+`llm` and `finetuned` fall back to the lexicon scorer if unreachable.
 
 ### 4b. `python/quantml/finetune/` — LLM fine-tuning
 
@@ -353,7 +366,8 @@ held-out financial tweets, against a ~65% majority-class baseline.
   walk-forward evaluation, Monte Carlo VaR/CVaR, ARIMA/GARCH volatility
   modeling, position limits + drawdown kill switches, transaction-cost
   modeling, lookahead-safe signal shifting
-- **Applied LLM/RAG**: TF-IDF + cosine similarity retrieval,
+- **Applied LLM/RAG**: TF-IDF + cosine similarity retrieval, real text
+  embeddings (Ollama) with a deterministic hashing-trick fallback,
   pydantic-validated structured LLM output, OpenAI-compatible LLM client
   with graceful fallback
 - **LLM fine-tuning**: `transformers` + `peft` (LoRA) on a pretrained

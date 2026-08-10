@@ -43,6 +43,29 @@ def test_ticker_search_shape(client, monkeypatch):
     assert r.json() == {"results": [{"symbol": "AAPL", "name": "Apple Inc."}]}
 
 
+# --- RAG search: TF-IDF vs. embedding retrieval, side by side --------------
+
+
+def test_rag_search_returns_empty_for_blank_query(client):
+    r = client.get("/api/rag/search?q=")
+    assert r.status_code == 200
+    assert r.json() == {"tfidf": [], "embedding": [], "embedding_backend": None}
+
+
+def test_rag_search_returns_both_backends_shape(client, monkeypatch):
+    import quantml.web.app as app_module
+    from quantml.rag.retriever import Document
+
+    doc = Document("a", "2023-01-01", "ACME", "record profit and strong growth this quarter")
+    monkeypatch.setattr(app_module, "_load_corpus_cached", lambda: [doc])
+    r = client.get("/api/rag/search?q=profit growth")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["tfidf"][0]["doc_id"] == "a"
+    assert body["embedding"][0]["doc_id"] == "a"
+    assert body["embedding_backend"] in ("ollama", "hashing_fallback")
+
+
 # --- Dashboard endpoints: shape + sanity -----------------------------------
 
 

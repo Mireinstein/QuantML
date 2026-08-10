@@ -235,6 +235,35 @@ async function loadBacktest() {
   renderSummaryTiles(document.getElementById("backtest-stats-overlay"), d.overlay_summary, "overlay", "RAG overlay (MA + sentiment)");
 }
 
+function renderRagResults(container, results) {
+  if (!results.length) {
+    container.innerHTML = `<div class="note">No matches.</div>`;
+    return;
+  }
+  container.innerHTML = results
+    .map(
+      (r) =>
+        `<div class="stat-tile" style="width:100%; align-items:flex-start;"><span class="label">${r.doc_id} -- score ${fmt(r.score, 3)}</span><span class="value" style="font-weight:400; font-size:0.72rem; white-space:normal;">${r.excerpt}</span></div>`
+    )
+    .join("");
+}
+
+async function runRagSearch(query) {
+  const tfidfBox = document.getElementById("rag-search-tfidf");
+  const embeddingBox = document.getElementById("rag-search-embedding");
+  const backendLabel = document.getElementById("rag-search-backend");
+  tfidfBox.innerHTML = `<div class="note">Searching...</div>`;
+  embeddingBox.innerHTML = "";
+  try {
+    const d = await getJSON(`/api/rag/search?q=${encodeURIComponent(query)}`);
+    renderRagResults(tfidfBox, d.tfidf);
+    renderRagResults(embeddingBox, d.embedding);
+    backendLabel.textContent = d.embedding_backend || "-";
+  } catch (e) {
+    tfidfBox.innerHTML = `<div class="note">${e.message}</div>`;
+  }
+}
+
 async function loadWalkForward() {
   const d = await getJSON("/api/walk-forward?n_folds=5");
   barChart(document.getElementById("wf-chart"), d.fold_sharpe, { zeroCentered: true });
@@ -502,6 +531,12 @@ async function loadGenerations() {
 // --- Boot ------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
   loadBacktest().catch(console.error);
+  runRagSearch(document.getElementById("rag-search-query").value).catch(console.error);
+  document.getElementById("rag-search-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = document.getElementById("rag-search-query").value.trim();
+    if (q) runRagSearch(q).catch(console.error);
+  });
   loadWalkForward().catch(console.error);
   loadVar().catch(console.error);
   loadVolatility().catch(console.error);

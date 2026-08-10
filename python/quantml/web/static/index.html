@@ -23,6 +23,25 @@
       <div class="chart-wrap" id="backtest-chart"></div>
       <div id="backtest-stats-baseline" class="stat-row"></div>
       <div id="backtest-stats-overlay" class="stat-row"></div>
+
+      <h3 style="margin-top:20px">Document search: TF-IDF vs. embeddings</h3>
+      <p class="sub">Same query, two retrieval techniques over the sample corpus, side by side.</p>
+      <form class="ml-form" id="rag-search-form">
+        <label>Query
+          <input type="text" id="rag-search-query" value="is the company doing well?" style="width:280px; text-transform:none;" />
+        </label>
+        <button type="submit">Search</button>
+      </form>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.6rem;">
+        <div>
+          <h4 style="margin:0 0 0.3rem; font-size:0.8rem; color:var(--muted);">TF-IDF</h4>
+          <div id="rag-search-tfidf"></div>
+        </div>
+        <div>
+          <h4 style="margin:0 0 0.3rem; font-size:0.8rem; color:var(--muted);">Embeddings (<span id="rag-search-backend">-</span>)</h4>
+          <div id="rag-search-embedding"></div>
+        </div>
+      </div>
     </section>
 
     <section class="panel" id="panel-walkforward">
