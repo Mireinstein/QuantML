@@ -1,9 +1,13 @@
 name: Retrain & Evaluate
 
-# Triggered on changes to whatever defines the model, or manually. Scoped
-# to files the "commit the new baseline" step below never touches (and
-# that commit message carries [skip ci] too), so this can't recursively
-# re-trigger itself.
+# Triggered on changes to whatever defines the model, on a weekly schedule,
+# or manually. The push trigger is scoped to files the "commit the new
+# baseline" step below never touches (and that commit message carries
+# [skip ci] too), so this can't recursively re-trigger itself. The schedule
+# is what makes this genuinely continuous learning: `--real-data` always
+# pulls the latest 5y window, so each scheduled run trains on whatever new
+# real trading days have accumulated since the last run, independent of
+# whether the model code itself changed.
 on:
   push:
     branches: [main]
@@ -11,6 +15,8 @@ on:
       - "python/quantml/ml/features.py"
       - "python/quantml/ml/model.py"
       - "python/quantml/ml/train.py"
+  schedule:
+    - cron: "0 6 * * 1" # every Monday, 06:00 UTC
   workflow_dispatch: {}
 
 permissions:

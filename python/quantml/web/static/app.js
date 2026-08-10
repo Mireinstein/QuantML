@@ -500,33 +500,6 @@ async function loadTrades() {
   }
 }
 
-async function loadGenerations() {
-  const container = document.getElementById("generations-table");
-  try {
-    const d = await getJSON("/api/autonomous/generations");
-    const rows = d.generations
-      .slice()
-      .reverse()
-      .map((g) => ({
-        timestamp: (g.timestamp || "").slice(0, 19).replace("T", " "),
-        outcome: g.event === "model_promoted" ? "promoted" : "rejected",
-        model_type: g.model_type ?? g.candidate_model_type ?? "-",
-        auc: g.auc ?? g.candidate_auc,
-        sharpe: g.sharpe ?? g.candidate_sharpe,
-        reasons: (g.reasons || []).join("; "),
-      }));
-    container.innerHTML = tableFrom(rows, [
-      ["When", "timestamp"],
-      ["Outcome", "outcome"],
-      ["Model", "model_type"],
-      ["AUC", "auc", (v) => fmt(v, 3)],
-      ["Sharpe", "sharpe", (v) => fmt(v, 3)],
-      ["Why rejected", "reasons"],
-    ]);
-  } catch (e) {
-    container.innerHTML = `<div class="note">${e.message}</div>`;
-  }
-}
 
 // --- Trading assistant agent -------------------------------------------
 let agentHistory = [];
@@ -591,12 +564,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadEquity().catch(console.error);
   loadTrades().catch(console.error);
-  loadGenerations().catch(console.error);
   loadBotStatus().catch(console.error);
   setInterval(() => {
     loadEquity().catch(console.error);
     loadTrades().catch(console.error);
-    loadGenerations().catch(console.error);
     loadBotStatus().catch(console.error);
   }, 30000);
 

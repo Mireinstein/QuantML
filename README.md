@@ -206,42 +206,48 @@ Alpaca credentials configured, so calls there fail closed with a 502.
 Don't add Alpaca credentials to the Azure deployment without adding auth
 first.
 
-### Autonomous continuous-learning loop (`autonomous.py`)
+### Daily live-trading loop (`autonomous.py`)
 
     python -m quantml.autonomous --ticker AAPL
 
-Trades every cycle and periodically retrains the model on what it's
-learned since, gated the same way as a manual retrain. Runs locally via
-the command above, or as its own Azure Container App
-(`trader_service.py` wraps it with a pause/resume control API — see
-Deployment) started and stopped from the dashboard.
+Trains once (at image build time — see Deployment), then trades against
+real, current data: it checks periodically
+(`--check-interval-seconds`, default 1 hour) whether the latest available
+daily bar is newer than the last day it traded, and if so, gets the
+current model's prediction, sizes a position, and submits a real order to
+the Alpaca paper account at today's real market price. If nothing new has
+landed since the last check, it does nothing — a daily bar only updates
+once a day, so there's nothing to act on in between. Runs locally via the
+command above, or as its own Azure Container App (`trader_service.py`
+wraps it with a pause/resume control API — see Deployment) started and
+stopped from the dashboard.
 
-A real daily bar only updates once per trading day, so a loop waiting on
-live data would sit idle most of the time, especially overnight. Instead
-this loop replays real historical data the model hasn't been evaluated
-against yet, one day at a time, at an accelerated cadence
-(`--cycle-seconds`, default 90s per day).
+An earlier version of this loop replayed historical data at an
+accelerated pace and executed those replayed signals as real orders at
+today's live price — a mismatch that was neither a valid backtest (wrong
+execution price for the replayed day) nor genuine live trading (wrong
+signal date for today's price). This version only ever acts on real,
+current data, and only once per real trading day.
 
-Each cycle: get the model's prediction for the next replayed day, size
-and submit a real order to the Alpaca paper account, then — since this is
-a replay of known history — learn that day's actual realized outcome.
-Every `--retrain-every` cycles (default 15), it retrains on an expanding
-window of the same historical series, evaluates the candidate through the
-same gate as `ml/eval_harness.py`, and only promotes it if it passes. A
-candidate that fails is discarded; the previously-promoted model keeps
-serving.
+Retraining is deliberately not part of this loop. It's handled separately
+by `.github/workflows/retrain-eval.yml` (see CI below), which runs on a
+weekly schedule and naturally incorporates whatever new real trading days
+have accumulated since the last run — a genuinely continuous learning
+signal driven by real time elapsing, decoupled from placing today's
+trade.
 
-Each cycle also runs a feature drift check (same z-score approach as
+Each check also runs a feature drift check (same z-score approach as
 TenantIQ's `ml/serve.py` `/monitoring` endpoint) against the training
-distribution.
+distribution, computed once at startup and reused for the life of the
+run.
 
-Every cycle is appended to `ml/autonomous_log.jsonl` (gitignored,
+Every check is appended to `ml/autonomous_log.jsonl` (gitignored,
 machine-local) and shown on the dashboard's "Live autonomous trading"
-panel if the dashboard is running on the same machine. A single cycle's
+panel if the dashboard is running on the same machine. A single check's
 failure is logged and the loop moves on rather than dying.
 
 **Bot trading performance panel**: reports on the loop, it doesn't
-require operating it. Three endpoints, all reading straight from Alpaca
+require operating it. Two endpoints, both reading straight from Alpaca
 rather than reconstructing state locally:
 
 - `GET /api/autonomous/equity` — the paper account's equity over time
@@ -249,10 +255,6 @@ rather than reconstructing state locally:
 - `GET /api/autonomous/trades` — order history
   (`paper_trading.py::list_orders`): side, qty, status, and whether it's
   filled (`filled_qty`/`filled_avg_price`) or still pending.
-- `GET /api/autonomous/generations` — every retrain the loop attempted,
-  promoted or rejected, with the AUC/Sharpe that decided it (derived from
-  the local activity log, the only record of promotion decisions) — shows
-  whether the model has been improving.
 
 ## CI (`.github/workflows/`)
 
@@ -262,15 +264,18 @@ container, waits for it to become ready, hits `/api/dashboard`,
 `/api/ml-signal`, and `/api/tickers/search` — so a broken container
 fails CI, not just a broken unit test.
 
-**`retrain-eval.yml`** — the automated retrain/eval loop, triggered on
-changes to whatever defines the model (`ml/features.py`, `ml/model.py`,
-`ml/train.py`) or manually via `workflow_dispatch`: retrain on real
-market data, evaluate against the quality gate (a regression or
-sub-floor metric fails the workflow here, before anything downstream
-runs), commit the new baseline back to the repo on pass (`[skip ci]`,
-scoped to a path the trigger above doesn't watch, so it can't
-recursively re-trigger itself), then build and smoke-test the retrained
-image the same way `ci.yml` does.
+**`retrain-eval.yml`** — the automated retrain/eval loop: this is what
+makes the model keep learning over real time. Triggered weekly on a
+schedule (Mondays 06:00 UTC), on changes to whatever defines the model
+(`ml/features.py`, `ml/model.py`, `ml/train.py`), or manually via
+`workflow_dispatch`. Retrains on real market data (always the latest 5y
+window, so a scheduled run naturally includes whatever new real trading
+days have accumulated since the last run), evaluates against the quality
+gate (a regression or sub-floor metric fails the workflow here, before
+anything downstream runs), commits the new baseline back to the repo on
+pass (`[skip ci]`, scoped to a path the push trigger above doesn't watch,
+so it can't recursively re-trigger itself), then builds and smoke-tests
+the retrained image the same way `ci.yml` does.
 
 ## Deployment
 
@@ -373,11 +378,9 @@ held-out financial tweets, against a ~65% majority-class baseline.
   action endpoints exists (`DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD`,
   HTTP Basic Auth), but it's a shared single-user password, with no
   sessions or per-user accounts.
-- `autonomous.py`'s continuous learning replays a fixed historical
-  download from when the loop started, not new market data — an
-  expanding-window retrain on data the model has already technically
-  seen once (as held-out test data), not the same as ingesting new bars
-  every trading day.
+- `retrain-eval.yml`'s schedule is weekly, not daily — the live model
+  only picks up a week's worth of new real trading days at a time, not
+  the very latest bar.
 
 ## Technologies
 
@@ -407,10 +410,16 @@ held-out financial tweets, against a ~65% majority-class baseline.
   Azure Container Apps + Container Registry
 - **Live market integration**: real historical data via `yfinance`, a REST
   client for Alpaca's paper-trading API, `.env`-based credential loading
-- **Continuous learning**: an accelerated-replay autonomous loop that
-  trades every cycle and periodically retrains on an expanding window,
-  gated by the same promotion check as a manual retrain, with per-cycle
-  feature drift monitoring
+- **Continuous learning**: a daily live-trading loop decoupled from a
+  separately-scheduled retrain/eval GitHub Actions workflow that retrains
+  on accumulated real market data and is gated by the same promotion
+  check as a manual retrain, with feature drift monitoring on every check
+- **CI/CD**: GitHub Actions running tests plus a real Docker
+  build-and-smoke-test on every push, and a scheduled retrain/eval/deploy
+  pipeline that commits an updated model baseline only on passing the
+  quality gate
+- **Live model monitoring**: rolling-window p50/p95 latency and feature
+  drift-flag-rate tracked over real inference requests
 - **Testing**: pytest (160 tests) covering feature engineering, both
   model families including PyTorch save/load round-trips, no-lookahead
   shift behavior, LoRA fine-tuning and its eval-harness gate, the
@@ -435,7 +444,7 @@ python/
     metrics.py                        # Sharpe, CAGR, drawdown, win rate, Monte Carlo VaR
     paper_trading.py                    # Alpaca paper-trading REST client
     paper_runner.py                       # rebalances a paper account to a strategy's target position
-    autonomous.py                           # continuous-learning + paper-trading loop
+    autonomous.py                           # daily live paper-trading loop
     trader_service.py                        # pause/resume control API wrapping autonomous.py (Azure trader app)
     tradingagent.py                            # multi-turn chat agent (LLM proposes, code disposes)
     ml/
@@ -519,7 +528,7 @@ python -m quantml.paper_runner --ticker AAPL --strategy ml_signal --dry-run
 python -m quantml.paper_runner --ticker AAPL --strategy ml_signal   # submits the paper order
 ```
 
-### Autonomous loop
+### Daily live-trading loop
 
 ```bash
 cd python
@@ -541,6 +550,7 @@ python -m quantml.autonomous --ticker AAPL
 - Multi-user auth (sessions, per-user accounts) instead of a single
   shared HTTP Basic Auth password.
 - A/B testing / canary rollout for newly-promoted models instead of
-  `autonomous.py`'s current all-or-nothing promotion gate.
-- Replace `autonomous.py`'s accelerated historical replay with
-  incremental ingestion of new trading days as they close.
+  `retrain-eval.yml`'s current all-or-nothing promotion gate.
+- Shorten `retrain-eval.yml`'s schedule from weekly to daily once the
+  eval harness's fresh-data check (see Limitations) is rigorous enough to
+  gate that often.

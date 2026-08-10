@@ -608,24 +608,6 @@ def test_autonomous_equity_shape(client, monkeypatch):
     assert r.json()["equity"] == [100000.0]
 
 
-def test_autonomous_generations_filters_to_promotion_events(client, monkeypatch):
-    from quantml import autonomous
-
-    monkeypatch.setattr(
-        autonomous,
-        "recent_activity",
-        lambda n: [
-            {"event": "cycle", "cycle": 1},
-            {"event": "model_promoted", "generation": 1, "auc": 0.56},
-            {"event": "retrain_rejected", "reasons": ["Sharpe regressed"]},
-        ],
-    )
-    r = client.get("/api/autonomous/generations")
-    assert r.status_code == 200
-    events = [g["event"] for g in r.json()["generations"]]
-    assert events == ["model_promoted", "retrain_rejected"]
-
-
 # --- Static frontend -----------------------------------------------------
 
 

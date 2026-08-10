@@ -30,15 +30,13 @@ control = autonomous.RunControl(paused=True)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ticker = os.environ.get("TRADER_TICKER", "AAPL")
-    cycle_seconds = int(os.environ.get("TRADER_CYCLE_SECONDS", "90"))
-    retrain_every = int(os.environ.get("TRADER_RETRAIN_EVERY", "15"))
+    check_interval_seconds = int(os.environ.get("TRADER_CHECK_INTERVAL_SECONDS", str(autonomous.DEFAULT_CHECK_INTERVAL_SECONDS)))
 
     thread = threading.Thread(
         target=autonomous.run,
         kwargs={
             "ticker": ticker,
-            "cycle_seconds": cycle_seconds,
-            "retrain_every": retrain_every,
+            "check_interval_seconds": check_interval_seconds,
             "control": control,
         },
         daemon=True,

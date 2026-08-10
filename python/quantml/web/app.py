@@ -511,7 +511,7 @@ def agent_chat(payload: ChatRequest) -> dict:
 
 @app.get("/api/autonomous/activity")
 def get_autonomous_activity(n: int = Query(default=50, ge=1, le=200)) -> dict:
-    """Recent activity from the autonomous continuous-learning loop
+    """Recent activity from the daily live-trading loop
     (quantml/autonomous.py) -- empty if it has never run on this machine.
     Locally this reads the loop's log file directly (same process/disk).
     On Azure, the loop instead runs in a separate, internal-only trader
@@ -616,14 +616,3 @@ def get_autonomous_equity(period: str = Query(default="1M"), timeframe: str = Qu
     }
 
 
-@app.get("/api/autonomous/generations")
-def get_autonomous_generations() -> dict:
-    """Model version history: every retrain the autonomous loop actually
-    promoted (passed the quality gate) or rejected, in order, with the
-    metrics that decided it -- derived from the local activity log
-    (quantml/ml/autonomous_log.jsonl), since that's the only record of
-    promotion decisions. Shows whether the model has actually been
-    improving, not just that retrains happened."""
-    activity = autonomous.recent_activity(autonomous.MAX_LOG_LINES_RETURNED)
-    generations = [e for e in activity if e["event"] in ("model_promoted", "retrain_rejected")]
-    return {"generations": generations}
