@@ -24,7 +24,7 @@ from .strategies import MovingAverageCrossover, SignalOverlayStrategy
 from .volatility import fit_garch, naive_rolling_vol
 from .walk_forward import run_walk_forward, summarize_walk_forward
 
-CORPUS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "sample_docs"
+CORPUS_DIR = Path(__file__).resolve().parent.parent / "data" / "sample_docs"
 
 
 def main() -> None:

@@ -57,7 +57,7 @@ from ..walk_forward import run_walk_forward, summarize_walk_forward
 
 # web/app.py sits one level deeper than cli.py (quantml/web/app.py vs
 # quantml/cli.py), so this needs one more .parent than cli.py's CORPUS_DIR.
-CORPUS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "sample_docs"
+CORPUS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "sample_docs"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 TICKER = "ACME"
 

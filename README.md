@@ -201,10 +201,10 @@ print it).
 
 The dashboard has an on-demand version: a "Run trade now" button
 (`POST /api/trade/run`) that does the same rebalance from the browser.
-It isn't exposed on the live Azure deployment — that container has no
-Alpaca credentials configured, so calls there fail closed with a 502.
-Don't add Alpaca credentials to the Azure deployment without adding auth
-first.
+It's live on the Azure deployment too -- Alpaca credentials are
+configured there, and this endpoint (along with the bot start/stop
+controls) requires the dashboard's HTTP Basic Auth password, since it
+submits real paper orders.
 
 ### Daily live-trading loop (`autonomous.py`)
 
@@ -469,9 +469,10 @@ python/
       static/         # index.html, app.js (hand-rolled SVG charts), style.css
     cli.py             # end-to-end demo
   tests/
+  data/
+    sample_docs/       # sample corpus (ticker ACME) -- inside python/ so it's
+                        # part of the Docker build context and actually ships
   Dockerfile           # containerized dashboard (train-at-build-time)
-data/
-  sample_docs/        # sample corpus (ticker ACME)
 ```
 
 ## Run it

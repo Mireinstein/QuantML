@@ -3,7 +3,7 @@ from pathlib import Path
 from quantml.rag.retriever import Document, Retriever, load_corpus
 from quantml.rag.signal import _lexicon_score, build_signal
 
-CORPUS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "sample_docs"
+CORPUS_DIR = Path(__file__).resolve().parent.parent / "data" / "sample_docs"
 
 
 def test_load_corpus_parses_filenames():
