@@ -115,16 +115,25 @@ majority-class baseline.
 
 A FastAPI app (`app.py`): equity curves, walk-forward folds, VaR/CVaR,
 GARCH volatility, the risk-limit kill switch, the ML signal's held-out
-performance, live prediction, feature importance, and an activity feed
-for the autonomous loop. Endpoints reuse `cli.py`'s recipe and recompute
-on every call rather than caching. No CDN dependencies — charts in
-`static/app.js` are a small hand-rolled inline-SVG helper.
+performance, live prediction, and feature importance. Endpoints reuse
+`cli.py`'s recipe and recompute on every call rather than caching. No
+CDN dependencies — charts in `static/app.js` are a small hand-rolled
+inline-SVG helper.
 
 `/api/ml-signal` reports the model's recorded chronological held-out
 performance rather than re-scoring against the dashboard's own demo data
 (which shares an RNG seed with training data, so re-scoring against it
 would show in-sample performance). `/api/ml-signal/predict` does live
-inference on today's real market data instead.
+inference on today's market data instead.
+
+**Live serving monitoring** (`GET /api/ml-signal/monitoring`, same
+pattern as TenantIQ's `ml/serve.py`): a fixed-size rolling window over
+recent `/predict` requests, tracking p50/p95 latency and a drift-flag
+rate. Drift means a feature value in a live request landed more than 3
+standard deviations from the training distribution's mean for that
+feature — reference stats are computed once from the model's own
+recorded training data source and cached for the process's life, not
+from the live request itself.
 
 ### 6. Real market data + paper trading
 

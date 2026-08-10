@@ -325,6 +325,24 @@ async function predictMlSignal(ticker) {
   }
 }
 
+async function loadMonitoring() {
+  const row = document.getElementById("ml-monitoring");
+  try {
+    const d = await getJSON("/api/ml-signal/monitoring");
+    row.innerHTML = "";
+    if (!d.n_requests) {
+      row.innerHTML = `<div class="note">No live prediction requests yet this run -- use "Predict" above to generate some.</div>`;
+      return;
+    }
+    row.appendChild(statTile("Requests", d.n_requests));
+    row.appendChild(statTile("p50 latency", fmt(d.p50_latency_ms, 1) + " ms"));
+    row.appendChild(statTile("p95 latency", fmt(d.p95_latency_ms, 1) + " ms"));
+    row.appendChild(statTile("Drift flag rate", (d.drift_flag_rate * 100).toFixed(1) + "%", d.drift_flag_rate > 0 ? "overlay" : "group"));
+  } catch (e) {
+    row.innerHTML = `<div class="note">${e.message}</div>`;
+  }
+}
+
 async function loadExplain(ticker) {
   const container = document.getElementById("explain-chart");
   container.innerHTML = `<div class="note">Computing permutation importance...</div>`;
@@ -505,12 +523,16 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("bot-stop-btn").addEventListener("click", () => setBotRunning(false));
 
   loadExplain("AAPL").catch(console.error);
+  loadMonitoring().catch(console.error);
+  setInterval(() => loadMonitoring().catch(console.error), 15000);
 
   document.getElementById("ml-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const ticker = document.getElementById("ml-ticker").value.trim().toUpperCase();
     if (ticker) {
-      predictMlSignal(ticker).catch(console.error);
+      predictMlSignal(ticker)
+        .then(() => loadMonitoring())
+        .catch(console.error);
       loadExplain(ticker).catch(console.error);
     }
   });

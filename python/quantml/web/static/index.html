@@ -76,6 +76,10 @@
       </form>
       <div id="ml-predict-result" class="stat-row"></div>
 
+      <h3 style="margin-top:20px">Live serving health</h3>
+      <p class="sub">Rolling window over recent live prediction requests: latency and feature drift against the training distribution.</p>
+      <div id="ml-monitoring" class="stat-row"></div>
+
       <h3 style="margin-top:20px">Why: feature importance</h3>
       <p class="sub">Permutation importance -- how much shuffling each feature degrades the model's AUC.</p>
       <div class="chart-wrap" id="explain-chart"></div>

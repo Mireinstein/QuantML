@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import os
 import secrets
+import time
+from collections import deque
 from pathlib import Path
 from typing import Optional
 
@@ -40,7 +42,7 @@ from ..data import generate_synthetic_ohlcv, load_real_ohlcv, search_tickers
 from ..engine import run_backtest
 from ..metrics import monte_carlo_var, summarize
 from ..ml.explain import explain_model
-from ..ml.features import LABEL_COLUMN, build_features, build_features_and_labels
+from ..ml.features import FEATURE_COLUMNS, LABEL_COLUMN, build_features, build_features_and_labels
 from ..ml.registry import ModelNotTrainedError, load_best_model, load_metadata
 from ..paper_runner import rebalance
 from ..paper_trading import PaperTradingError, get_portfolio_history, list_orders
@@ -105,6 +107,56 @@ def _load_corpus_cached() -> list[Document]:
     if _docs_cache is None:
         _docs_cache = load_corpus(CORPUS_DIR)
     return _docs_cache
+
+
+# --- Live inference monitoring (rolling window over /api/ml-signal/predict) -
+#
+# Same idea as TenantIQ's ml/serve.py monitoring: a fixed-size rolling
+# window of recent live requests, tracking p50/p95 latency and a
+# drift-flag rate. Drift here means a feature value in a live prediction
+# request landed more than DRIFT_Z_THRESHOLD standard deviations from the
+# TRAINING distribution's mean for that feature -- the reference stats
+# are computed once from the same data the live model actually trained on
+# (per its recorded data_source) and cached for the life of the process,
+# not recomputed from the live request itself (which would just measure
+# "is today weird relative to today," not real drift).
+MONITORING_WINDOW = 500
+DRIFT_Z_THRESHOLD = 3.0
+_predict_request_log: deque[dict] = deque(maxlen=MONITORING_WINDOW)
+_reference_stats_cache: Optional[dict] = None
+
+
+def _reference_feature_stats() -> dict:
+    global _reference_stats_cache
+    if _reference_stats_cache is not None:
+        return _reference_stats_cache
+
+    metadata = load_metadata()
+    source = metadata["data_source"]
+    if source == "synthetic":
+        reference_prices = generate_synthetic_ohlcv(n_days=1500, seed=7)
+    else:
+        _, ticker, period = source.split(":")
+        reference_prices = load_real_ohlcv(ticker, period=period)
+
+    reference_features = build_features(reference_prices)
+    _reference_stats_cache = {
+        col: {"mean": float(reference_features[col].mean()), "std": float(reference_features[col].std())}
+        for col in FEATURE_COLUMNS
+    }
+    return _reference_stats_cache
+
+
+def _is_drifted(row) -> bool:
+    try:
+        stats = _reference_feature_stats()
+    except ModelNotTrainedError:
+        return False
+    for col in FEATURE_COLUMNS:
+        mean, std = stats[col]["mean"], stats[col]["std"]
+        if std > 0 and abs(row[col] - mean) / std > DRIFT_Z_THRESHOLD:
+            return True
+    return False
 
 
 def _prices():
@@ -239,11 +291,13 @@ def get_ml_signal() -> dict:
 
 @app.get("/api/ml-signal/predict")
 def predict_ml_signal(ticker: str = Query(default="AAPL"), period: str = Query(default="1y")) -> dict:
-    """Genuine live inference: pulls today's real market data for `ticker`
-    and asks the currently-trained model what it thinks RIGHT NOW. This is
-    not a backtest metric, so there's no held-out/leakage question here --
-    it's just "run the model on the latest real row," same as
-    paper_runner.py does before sizing an order."""
+    """Live inference: pulls today's market data for `ticker` and asks the
+    currently-trained model what it thinks right now. Not a backtest
+    metric, so there's no held-out/leakage question here -- it's "run the
+    model on the latest row," same as paper_runner.py does before sizing
+    an order. Every call is logged (latency, drift) for
+    /api/ml-signal/monitoring."""
+    start = time.perf_counter()
     try:
         model = load_best_model()
     except ModelNotTrainedError as e:
@@ -264,12 +318,40 @@ def predict_ml_signal(ticker: str = Query(default="AAPL"), period: str = Query(d
     # corresponds to "today." The sklearn models don't need this but
     # handle a full table just as well, since they predict row-by-row.
     proba_up = float(model.predict_proba(features)[-1])
+    latency_ms = (time.perf_counter() - start) * 1000
+    _predict_request_log.append({"latency_ms": latency_ms, "drifted": _is_drifted(features.iloc[-1])})
+
     return {
         "ticker": ticker,
         "as_of_date": features.index[-1].date().isoformat(),
         "last_close": float(prices["close"].iloc[-1]),
         "predicted_proba_up": proba_up,
         "suggested_position": max(-1.0, min(1.0, 2 * proba_up - 1)),
+    }
+
+
+@app.get("/api/ml-signal/monitoring")
+def get_ml_signal_monitoring() -> dict:
+    """Rolling-window health of the live /predict endpoint -- request
+    volume, p50/p95 latency, and the fraction of recent requests flagged
+    for feature drift. See the module-level comment above
+    _predict_request_log for what "drift" means here."""
+    if not _predict_request_log:
+        return {"n_requests": 0, "p50_latency_ms": None, "p95_latency_ms": None, "drift_flag_rate": None}
+
+    latencies = sorted(r["latency_ms"] for r in _predict_request_log)
+    n = len(latencies)
+
+    def percentile(p: float) -> float:
+        idx = min(int(p * n), n - 1)
+        return latencies[idx]
+
+    drift_rate = sum(1 for r in _predict_request_log if r["drifted"]) / n
+    return {
+        "n_requests": n,
+        "p50_latency_ms": round(percentile(0.5), 3),
+        "p95_latency_ms": round(percentile(0.95), 3),
+        "drift_flag_rate": round(drift_rate, 3),
     }
 
 

@@ -140,6 +140,65 @@ def test_ml_signal_predict_rejects_a_ticker_with_no_history(client):
     assert r.status_code in (422, 503)
 
 
+# --- Live inference monitoring ----------------------------------------
+
+
+def test_ml_signal_monitoring_empty_when_no_requests_yet(client, monkeypatch):
+    import quantml.web.app as app_module
+    from collections import deque
+
+    monkeypatch.setattr(app_module, "_predict_request_log", deque(maxlen=app_module.MONITORING_WINDOW))
+    r = client.get("/api/ml-signal/monitoring")
+    assert r.status_code == 200
+    assert r.json() == {"n_requests": 0, "p50_latency_ms": None, "p95_latency_ms": None, "drift_flag_rate": None}
+
+
+def test_ml_signal_monitoring_computes_percentiles_and_drift_rate(client, monkeypatch):
+    import quantml.web.app as app_module
+    from collections import deque
+
+    log = deque(maxlen=app_module.MONITORING_WINDOW)
+    for latency, drifted in [(10.0, False), (20.0, False), (30.0, True), (40.0, False)]:
+        log.append({"latency_ms": latency, "drifted": drifted})
+    monkeypatch.setattr(app_module, "_predict_request_log", log)
+
+    r = client.get("/api/ml-signal/monitoring")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["n_requests"] == 4
+    assert body["drift_flag_rate"] == 0.25
+    assert body["p50_latency_ms"] in (20.0, 30.0)  # depends on percentile rounding convention
+
+
+def test_is_drifted_flags_an_outlier_row():
+    import pandas as pd
+
+    import quantml.web.app as app_module
+
+    stats = {col: {"mean": 0.0, "std": 1.0} for col in app_module.FEATURE_COLUMNS}
+    app_module._reference_stats_cache = stats
+    try:
+        normal_row = pd.Series({col: 0.1 for col in app_module.FEATURE_COLUMNS})
+        assert app_module._is_drifted(normal_row) is False
+
+        outlier_row = pd.Series({col: 0.1 for col in app_module.FEATURE_COLUMNS})
+        outlier_row[app_module.FEATURE_COLUMNS[0]] = 50.0
+        assert app_module._is_drifted(outlier_row) is True
+    finally:
+        app_module._reference_stats_cache = None
+
+
+def test_is_drifted_degrades_gracefully_without_a_trained_model(monkeypatch):
+    import pandas as pd
+
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "load_metadata", _raise_not_trained)
+    app_module._reference_stats_cache = None
+    row = pd.Series({col: 0.1 for col in app_module.FEATURE_COLUMNS})
+    assert app_module._is_drifted(row) is False
+
+
 def _raise_not_trained(*args, **kwargs):
     from quantml.ml.registry import ModelNotTrainedError
 
