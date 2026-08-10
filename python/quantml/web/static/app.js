@@ -481,50 +481,6 @@ async function loadGenerations() {
   }
 }
 
-function orderText(order) {
-  // `order` from a cycle log entry is one of: null (no order needed that
-  // cycle), a string ("DRY RUN -- ..."), {id, side, qty, status} (Alpaca
-  // accepted it), or {error} (Alpaca rejected it -- e.g. the wash-trade
-  // guard firing because a previous order is still open/unfilled).
-  if (!order) return "no order";
-  if (typeof order === "string") return order;
-  if (order.error) return `rejected: ${order.error}`;
-  return `${order.side} ${order.qty} (${order.status})`;
-}
-
-async function loadAutonomousActivity() {
-  const container = document.getElementById("autonomous-activity");
-  try {
-    const d = await getJSON("/api/autonomous/activity?n=20");
-    if (!d.activity.length) {
-      container.innerHTML = `<div class="note">Not running on this machine right now -- start it with \`python -m quantml.autonomous --ticker AAPL\` from python/.</div>`;
-      return;
-    }
-    const rows = d.activity
-      .slice()
-      .reverse()
-      .map((e) => {
-        if (e.event === "cycle") {
-          return `<div class="stat-tile"><span class="label">${e.replayed_day} (gen ${e.generation})</span><span class="value">P(up)=${fmt(e.predicted_proba_up, 2)} pos=${fmt(e.suggested_position, 2)} -- ${orderText(e.order)}</span></div>`;
-        }
-        if (e.event === "model_promoted") {
-          return `<div class="stat-tile group"><span class="label">Model promoted (gen ${e.generation})</span><span class="value">${e.model_type}, AUC ${fmt(e.auc, 3)}, Sharpe ${fmt(e.sharpe, 3)}</span></div>`;
-        }
-        if (e.event === "retrain_rejected") {
-          return `<div class="stat-tile"><span class="label">Retrain rejected</span><span class="value">${e.reasons.join("; ")}</span></div>`;
-        }
-        if (e.event === "cycle_error") {
-          return `<div class="stat-tile"><span class="label">Cycle error</span><span class="value">${e.error}</span></div>`;
-        }
-        return `<div class="stat-tile"><span class="label">${e.event}</span><span class="value"></span></div>`;
-      })
-      .join("");
-    container.innerHTML = `<div class="stat-row">${rows}</div>`;
-  } catch (e) {
-    container.innerHTML = `<div class="note">${e.message}</div>`;
-  }
-}
-
 // --- Boot ------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
   loadBacktest().catch(console.error);
@@ -533,8 +489,6 @@ document.addEventListener("DOMContentLoaded", () => {
   loadVolatility().catch(console.error);
   loadRiskLimits().catch(console.error);
   loadMlSignal().catch(console.error);
-  loadAutonomousActivity().catch(console.error);
-  setInterval(() => loadAutonomousActivity().catch(console.error), 15000);
 
   loadEquity().catch(console.error);
   loadTrades().catch(console.error);
