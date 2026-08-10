@@ -132,10 +132,10 @@ contract as the synthetic generator.
 
 `data.py::search_tickers(query)` (`GET /api/tickers/search?q=`) is a
 company-name -> ticker lookup, so the dashboard's ticker fields don't
-require already knowing that Apple is AAPL -- real Yahoo Finance search
-(`yfinance.Search`), not a hardcoded list, filtered to plain US-listed
-common stock (no `.DE`/`.NE`-suffixed foreign listings, no ETFs/options)
-since that's the only kind of ticker the rest of the app can actually
+require already knowing that Apple is AAPL -- queries Yahoo Finance
+search (`yfinance.Search`) live, filtered to plain US-listed common
+stock (no `.DE`/`.NE`-suffixed foreign listings, no ETFs/options) since
+that's the only kind of ticker the rest of the app can actually
 use. The dashboard's ticker inputs are a small autocomplete widget
 (`attachTickerAutocomplete` in `app.js`) built on top of it.
 
@@ -264,11 +264,10 @@ still works as a portfolio piece anyone can view without logging in.
 
 Cost: Container Registry (Basic SKU) is a flat ~$5/month; the dashboard's
 consumption plan scales to zero when idle, within the free monthly
-allowance. The **trader app cannot scale to zero** — it's a continuously
-running loop, not a request handler — so it's billed for compute the
-entire time it exists, on top of the flat-fee items above. At 0.25 vCPU
-/ 0.5Gi that's a modest but real ongoing charge once it's been running a
-full month, unlike everything else in this deployment.
+allowance. The **trader app cannot scale to zero** — it runs a
+continuous loop, so it's billed for compute the entire time it exists,
+on top of the flat-fee items above. At 0.25 vCPU / 0.5Gi that's a modest
+but ongoing charge once it's been running a full month.
 
 ## Results
 
