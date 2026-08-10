@@ -195,16 +195,15 @@ failure is logged and the loop moves on rather than dying.
 require operating it. Three endpoints, all reading straight from Alpaca
 rather than reconstructing state locally:
 
-- `GET /api/autonomous/equity` — the paper account's real equity over
-  time (`paper_trading.py::get_portfolio_history`), stays flat until
-  orders actually fill.
-- `GET /api/autonomous/trades` — real order history
+- `GET /api/autonomous/equity` — the paper account's equity over time
+  (`paper_trading.py::get_portfolio_history`), stays flat until orders fill.
+- `GET /api/autonomous/trades` — order history
   (`paper_trading.py::list_orders`): side, qty, status, and whether it's
-  actually filled (`filled_qty`/`filled_avg_price`) or still pending.
+  filled (`filled_qty`/`filled_avg_price`) or still pending.
 - `GET /api/autonomous/generations` — every retrain the loop attempted,
   promoted or rejected, with the AUC/Sharpe that decided it (derived from
   the local activity log, the only record of promotion decisions) — shows
-  whether the model has actually been improving.
+  whether the model has been improving.
 
 ## Deployment
 
@@ -306,13 +305,13 @@ held-out financial tweets, against a ~65% majority-class baseline.
   principal's Contributor role excludes assigning RBAC roles to other
   principals — see `terraform/registry.tf`). Auth on the dashboard's
   action endpoints exists (`DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD`,
-  HTTP Basic Auth), but it's a shared single-user password, not a real
-  auth system with sessions or per-user accounts.
+  HTTP Basic Auth), but it's a shared single-user password, with no
+  sessions or per-user accounts.
 - `autonomous.py`'s continuous learning replays a fixed historical
-  download from when the loop started, not genuinely new market data —
-  an expanding-window retrain on data the model has already technically
-  seen once (as held-out test data), not the same as ingesting real new
-  bars every trading day.
+  download from when the loop started, not new market data — an
+  expanding-window retrain on data the model has already technically
+  seen once (as held-out test data), not the same as ingesting new bars
+  every trading day.
 
 ## Technologies
 
@@ -467,5 +466,5 @@ python -m quantml.autonomous --ticker AAPL
   shared HTTP Basic Auth password.
 - A/B testing / canary rollout for newly-promoted models instead of
   `autonomous.py`'s current all-or-nothing promotion gate.
-- Replace `autonomous.py`'s accelerated historical replay with genuine
+- Replace `autonomous.py`'s accelerated historical replay with
   incremental ingestion of new trading days as they close.
