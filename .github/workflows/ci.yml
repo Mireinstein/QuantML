@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: python/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests/ -v
+
+  docker-smoke-test:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t quantml-dashboard:ci python/
+      - name: Run container and wait for it to become ready
+        run: |
+          docker run -d -p 8080:8080 --name quantml-ci quantml-dashboard:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/api/dashboard > /dev/null; then
+              echo "Ready after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Container never became ready"
+          docker logs quantml-ci
+          exit 1
+      - name: Hit the real endpoints -- a broken container fails here, not just a broken unit test
+        run: |
+          curl -sf http://localhost:8080/api/dashboard > /dev/null
+          curl -sf http://localhost:8080/api/ml-signal > /dev/null
+          curl -sf http://localhost:8080/api/tickers/search?q=apple > /dev/null
+      - name: Container logs
+        if: always()
+        run: docker logs quantml-ci

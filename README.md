@@ -1,5 +1,7 @@
 # QuantML
 
+[![CI](https://github.com/Mireinstein/QuantML/actions/workflows/ci.yml/badge.svg)](https://github.com/Mireinstein/QuantML/actions/workflows/ci.yml)
+
 An applied ML platform for systematic trading: a feature engineering +
 model training pipeline (scikit-learn and a PyTorch GRU), evaluated with
 no-lookahead walk-forward validation and a standalone quality gate,
@@ -204,6 +206,24 @@ rather than reconstructing state locally:
   promoted or rejected, with the AUC/Sharpe that decided it (derived from
   the local activity log, the only record of promotion decisions) — shows
   whether the model has been improving.
+
+## CI (`.github/workflows/`)
+
+**`ci.yml`** — every push/PR to `main`: `pytest tests/`, then builds the
+`python/Dockerfile` image and smoke-tests it for real — runs the
+container, waits for it to become ready, hits `/api/dashboard`,
+`/api/ml-signal`, and `/api/tickers/search` — so a broken container
+fails CI, not just a broken unit test.
+
+**`retrain-eval.yml`** — the automated retrain/eval loop, triggered on
+changes to whatever defines the model (`ml/features.py`, `ml/model.py`,
+`ml/train.py`) or manually via `workflow_dispatch`: retrain on real
+market data, evaluate against the quality gate (a regression or
+sub-floor metric fails the workflow here, before anything downstream
+runs), commit the new baseline back to the repo on pass (`[skip ci]`,
+scoped to a path the trigger above doesn't watch, so it can't
+recursively re-trigger itself), then build and smoke-test the retrained
+image the same way `ci.yml` does.
 
 ## Deployment
 

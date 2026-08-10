@@ -1,0 +1,64 @@
+name: Retrain & Evaluate
+
+# Triggered on changes to whatever defines the model, or manually. Scoped
+# to files the "commit the new baseline" step below never touches (and
+# that commit message carries [skip ci] too), so this can't recursively
+# re-trigger itself.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "python/quantml/ml/features.py"
+      - "python/quantml/ml/model.py"
+      - "python/quantml/ml/train.py"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  retrain-eval:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: python/requirements.txt
+      - run: pip install -r requirements.txt
+
+      - name: Retrain on real market data (matches the live deployment's data source)
+        run: python -m quantml.ml.train --real-data --ticker AAPL --period 5y
+
+      - name: Evaluate against the quality gate -- a regression or a sub-floor metric fails the workflow here, before anything downstream runs
+        run: python -m quantml.ml.eval_harness --update-baseline
+
+      - name: Commit the new baseline (gate already passed above)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add quantml/ml/eval_baseline.json
+          git diff --cached --quiet || git commit -m "Update ML eval baseline [skip ci]"
+          git push
+
+      - name: Build the retrained image and smoke-test it -- proves the newly retrained artifact actually builds and serves, not just that the code compiles
+        run: |
+          docker build -t quantml-dashboard:retrained .
+          docker run -d -p 8080:8080 --name quantml-retrained quantml-dashboard:retrained
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/api/ml-signal > /dev/null; then
+              echo "Ready after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Container never became ready"
+          docker logs quantml-retrained
+          exit 1
+      - name: Container logs
+        if: always()
+        run: docker logs quantml-retrained
