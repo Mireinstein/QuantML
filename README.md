@@ -148,6 +148,31 @@ feature — reference stats are computed once from the model's own
 recorded training data source and cached for the process's life, not
 from the live request itself.
 
+### 5b. `python/quantml/tradingagent.py` — trading assistant agent
+
+A multi-turn chat agent, same "LLM proposes, code disposes" architecture
+TenantIQ's renter-side agent used: the LLM (OpenAI-compatible, local
+Ollama by default) reads the conversation and returns one small validated
+JSON object — an action (`predict`, `explain`, `status`, or `none`), a
+ticker, and a draft reply. The server executes that action
+deterministically against the exact same functions the dashboard's own
+Predict/Explain buttons call, then returns the LLM's phrased reply
+alongside the real computed data.
+
+**There is no trade action in the schema at all** — not a permission
+check that could be misconfigured, an actual absence in the type
+(`Literal["predict", "explain", "status", "none"]`), asserted directly in
+a test. Placing an order always goes through the dedicated "Run trade
+now" button. Asked to trade, the agent is prompted to explain that and
+do nothing else.
+
+Small local models frequently omit fields even under JSON mode (confirmed
+against `qwen2.5:3b`) — `reply` defaults to an empty string rather than
+failing the whole turn, and the caller substitutes a deterministic
+templated reply when it's blank, same guardrail-against-weak-model-output
+philosophy as TenantIQ. Falls back to a fixed message if the LLM endpoint
+is unreachable or returns something that fails validation entirely.
+
 ### 6. Real market data + paper trading
 
 `data.py::load_real_ohlcv(ticker, period, interval)` pulls real daily
@@ -370,6 +395,10 @@ held-out financial tweets, against a ~65% majority-class baseline.
   embeddings (Ollama) with a deterministic hashing-trick fallback,
   pydantic-validated structured LLM output, OpenAI-compatible LLM client
   with graceful fallback
+- **AI agent orchestration**: a multi-turn chat agent with a per-turn
+  structured decision loop, an action space that structurally excludes
+  anything with financial consequences, and guardrails against
+  unreliable/incomplete model output
 - **LLM fine-tuning**: `transformers` + `peft` (LoRA) on a pretrained
   transformer (DistilBERT), MLflow-tracked, gated by a standalone eval
   harness
@@ -382,12 +411,15 @@ held-out financial tweets, against a ~65% majority-class baseline.
   trades every cycle and periodically retrains on an expanding window,
   gated by the same promotion check as a manual retrain, with per-cycle
   feature drift monitoring
-- **Testing**: pytest (107 tests) covering feature engineering, both
+- **Testing**: pytest (160 tests) covering feature engineering, both
   model families including PyTorch save/load round-trips, no-lookahead
   shift behavior, LoRA fine-tuning and its eval-harness gate, the
   backtester, walk-forward, risk limits, volatility modeling, the RAG
-  pipeline, the FastAPI dashboard/ML-signal API, real data loading, and
-  paper trading (mocked where it touches a network/account)
+  pipeline (both retrieval backends), the trading agent (including a
+  direct assertion that its action space has no trade action), the
+  FastAPI dashboard/ML-signal API, real data loading, and paper trading
+  (mocked where it touches a network/account) -- run automatically on
+  every push via GitHub Actions (see CI below)
 
 ## Layout
 
@@ -405,6 +437,7 @@ python/
     paper_runner.py                       # rebalances a paper account to a strategy's target position
     autonomous.py                           # continuous-learning + paper-trading loop
     trader_service.py                        # pause/resume control API wrapping autonomous.py (Azure trader app)
+    tradingagent.py                            # multi-turn chat agent (LLM proposes, code disposes)
     ml/
       features.py     # technical features + next-day-direction labels
       model.py          # SklearnSignalModel, TorchSignalModel (GRU)
@@ -413,9 +446,10 @@ python/
       registry.py             # loads whichever model train.py selected
       explain.py                # permutation importance
     rag/
-      retriever.py    # TF-IDF retrieval
-      signal.py         # lexicon/LLM/finetuned scoring -> daily signal
-      llm.py              # OpenAI-compatible client
+      retriever.py    # TF-IDF retrieval + embedding-based semantic retrieval
+      embeddings.py     # Ollama embeddings, hashing-trick fallback
+      signal.py           # lexicon/LLM/finetuned scoring -> daily signal
+      llm.py                # OpenAI-compatible client
     finetune/
       data.py         # financial-tweet sentiment dataset (HF Hub)
       model.py          # LoRA adapter inference wrapper

@@ -13,6 +13,18 @@
   </header>
 
   <main>
+    <section class="panel" id="panel-agent">
+      <h2>Trading assistant</h2>
+      <p class="sub">Ask about a prediction, feature importance, or the model's performance. It can only read data -- placing a trade always goes through the "Run trade now" button, never chat. Needs a local LLM endpoint (Ollama by default); falls back to a message if none is reachable.</p>
+      <div id="agent-messages" class="agent-messages"></div>
+      <form class="ml-form" id="agent-form">
+        <label style="flex:1">Message
+          <input type="text" id="agent-input" placeholder="e.g. what do you think about Tesla?" style="width:100%; text-transform:none;" autocomplete="off" />
+        </label>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
     <section class="panel" id="panel-backtest">
       <h2>Backtest: baseline vs. RAG sentiment overlay</h2>
       <p class="sub">MA crossover (baseline) vs. MA crossover + TF-IDF/lexicon sentiment overlay (weight 0.4), same synthetic price series (seed=7).</p>

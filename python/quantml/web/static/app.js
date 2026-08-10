@@ -528,8 +528,54 @@ async function loadGenerations() {
   }
 }
 
+// --- Trading assistant agent -------------------------------------------
+let agentHistory = [];
+
+function appendAgentMessage(role, text, meta) {
+  const container = document.getElementById("agent-messages");
+  const div = document.createElement("div");
+  div.className = `agent-msg ${role}`;
+  div.textContent = text;
+  if (meta) {
+    const metaSpan = document.createElement("span");
+    metaSpan.className = "agent-meta";
+    metaSpan.textContent = meta;
+    div.appendChild(metaSpan);
+  }
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function sendAgentMessage(message) {
+  appendAgentMessage("user", message);
+  agentHistory.push({ role: "user", content: message });
+
+  try {
+    const resp = await fetch("/api/agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, history: agentHistory.slice(-6) }),
+    });
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || `${resp.status}`);
+    appendAgentMessage("assistant", d.reply, d.action !== "none" ? `action: ${d.action}${d.ticker ? " " + d.ticker : ""}` : null);
+    agentHistory.push({ role: "assistant", content: d.reply });
+  } catch (e) {
+    appendAgentMessage("assistant", `Error: ${e.message}`);
+  }
+}
+
 // --- Boot ------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("agent-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = document.getElementById("agent-input");
+    const message = input.value.trim();
+    if (!message) return;
+    input.value = "";
+    sendAgentMessage(message).catch(console.error);
+  });
+
   loadBacktest().catch(console.error);
   runRagSearch(document.getElementById("rag-search-query").value).catch(console.error);
   document.getElementById("rag-search-form").addEventListener("submit", (e) => {

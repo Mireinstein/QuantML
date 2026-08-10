@@ -43,6 +43,121 @@ def test_ticker_search_shape(client, monkeypatch):
     assert r.json() == {"results": [{"symbol": "AAPL", "name": "Apple Inc."}]}
 
 
+# --- Trading assistant agent ------------------------------------------
+
+
+def test_agent_chat_rejects_blank_message(client):
+    r = client.post("/api/agent/chat", json={"message": "   "})
+    assert r.status_code == 422
+
+
+def test_agent_chat_falls_back_when_llm_unreachable(client, monkeypatch):
+    import quantml.web.app as app_module
+
+    monkeypatch.setattr(app_module, "interpret_turn", lambda message, history: None)
+    r = client.post("/api/agent/chat", json={"message": "what about AAPL?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["action"] == "none"
+    assert body["data"] is None
+    assert "couldn't reach" in body["reply"].lower()
+
+
+def test_agent_chat_executes_predict_action_and_returns_real_data(client, monkeypatch):
+    import quantml.web.app as app_module
+    from quantml.tradingagent import AgentTurn
+
+    monkeypatch.setattr(
+        app_module, "interpret_turn", lambda message, history: AgentTurn(action="predict", ticker="AAPL", reply="")
+    )
+    monkeypatch.setattr(
+        app_module,
+        "predict_ml_signal",
+        lambda ticker, period="1y": {"ticker": ticker, "predicted_proba_up": 0.6, "suggested_position": 0.2},
+    )
+    r = client.post("/api/agent/chat", json={"message": "what about AAPL?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["action"] == "predict"
+    assert body["ticker"] == "AAPL"
+    assert body["data"]["predicted_proba_up"] == 0.6
+    assert "60.0%" in body["reply"]  # deterministic fallback reply since the LLM gave an empty one
+
+
+def test_agent_chat_calls_the_real_predict_and_explain_handlers_without_mocking_them(client, monkeypatch):
+    """Regression test: agent_chat calls predict_ml_signal/explain_ml_signal
+    directly as plain Python functions, not through FastAPI's request
+    pipeline -- their `period` parameter defaults to a `Query(...)`
+    object, which FastAPI only resolves into a plain string when a real
+    request comes in. Calling them directly without passing period=
+    explicitly passed a raw Query object into yfinance and crashed with
+    AttributeError: 'Query' object has no attribute 'lower'. Deliberately
+    does NOT mock predict_ml_signal/explain_ml_signal here -- only the
+    network layer underneath them -- so this exercises the exact call
+    path that broke."""
+    import pandas as pd
+
+    import quantml.web.app as app_module
+    from quantml.tradingagent import AgentTurn
+
+    idx = pd.date_range("2024-01-02", periods=120, freq="B")
+    close = pd.Series(range(120), dtype=float) + 100
+    fake_prices = pd.DataFrame(
+        {"open": close, "high": close + 1, "low": close - 1, "close": close, "volume": [1_000_000] * 120}, index=idx
+    )
+    monkeypatch.setattr(app_module, "load_real_ohlcv", lambda ticker, period="1y", interval="1d": fake_prices)
+
+    monkeypatch.setattr(
+        app_module, "interpret_turn", lambda message, history: AgentTurn(action="predict", ticker="AAPL", reply="")
+    )
+    r = client.post("/api/agent/chat", json={"message": "what about AAPL?"})
+    assert r.status_code == 200
+    assert r.json()["action"] == "predict"
+
+    monkeypatch.setattr(
+        app_module, "interpret_turn", lambda message, history: AgentTurn(action="explain", ticker="AAPL", reply="")
+    )
+    r = client.post("/api/agent/chat", json={"message": "why?"})
+    assert r.status_code == 200
+    assert r.json()["action"] == "explain"
+
+
+def test_agent_chat_never_exposes_a_trade_action_in_its_response(client, monkeypatch):
+    """End-to-end guard: even if something upstream misbehaved, the
+    response shape this endpoint can produce has no way to represent
+    "a trade was placed" -- action is one of predict/explain/status/none."""
+    import quantml.web.app as app_module
+    from quantml.tradingagent import AgentTurn
+
+    monkeypatch.setattr(
+        app_module,
+        "interpret_turn",
+        lambda message, history: AgentTurn(action="none", reply="I can't place trades through chat."),
+    )
+    r = client.post("/api/agent/chat", json={"message": "buy 10 shares of AAPL"})
+    assert r.status_code == 200
+    assert r.json()["action"] == "none"
+
+
+def test_agent_chat_handles_action_failure_gracefully(client, monkeypatch):
+    from fastapi import HTTPException
+
+    import quantml.web.app as app_module
+    from quantml.tradingagent import AgentTurn
+
+    monkeypatch.setattr(
+        app_module, "interpret_turn", lambda message, history: AgentTurn(action="predict", ticker="AAPL", reply="")
+    )
+
+    def _raise(*args, **kwargs):
+        raise HTTPException(status_code=422, detail="not enough history")
+
+    monkeypatch.setattr(app_module, "predict_ml_signal", _raise)
+    r = client.post("/api/agent/chat", json={"message": "predict AAPL"})
+    assert r.status_code == 200  # the chat endpoint itself never fails, even if the underlying action does
+    assert "not enough history" in r.json()["reply"]
+
+
 # --- RAG search: TF-IDF vs. embedding retrieval, side by side --------------
 
 

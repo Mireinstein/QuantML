@@ -18,9 +18,9 @@ reason cli.py doesn't re-score the model against its own demo data (see
 cli.py's comment on this): `/api/ml-signal` reports the model's TRUE
 chronological held-out performance recorded at training time (never
 recomputed against data that might overlap what it trained on), while
-`/api/ml-signal/predict` does a genuinely fresh, leakage-free thing --
-live inference on today's real market data, which isn't a backtest metric
-at all and so has no leakage question to begin with.
+`/api/ml-signal/predict` does a fresh, leakage-free thing instead --
+live inference on today's market data, which isn't a backtest metric at
+all and so has no leakage question to begin with.
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .. import autonomous
 from ..data import generate_synthetic_ohlcv, load_real_ohlcv, search_tickers
@@ -50,6 +51,7 @@ from ..rag.retriever import Document, EmbeddingRetriever, Retriever, load_corpus
 from ..rag.signal import build_signal
 from ..risk import RiskLimits, apply_risk_limits
 from ..strategies import MLSignalStrategy, MovingAverageCrossover, SignalOverlayStrategy
+from ..tradingagent import interpret_turn
 from ..volatility import fit_garch, naive_rolling_vol
 from ..walk_forward import run_walk_forward, summarize_walk_forward
 
@@ -440,6 +442,71 @@ def explain_ml_signal(ticker: str = Query(default="AAPL"), period: str = Query(d
         "n_eval": len(df),
         "importances": [{"feature": fi.feature, "importance_mean": fi.importance_mean, "importance_std": fi.importance_std} for fi in ranked],
     }
+
+
+# --- Trading assistant agent ---------------------------------------------
+#
+# Deliberately no auth on this endpoint: it can never do anything auth
+# would need to gate. Its action space (see tradingagent.py::AgentTurn)
+# has no trade action in it at all -- there's no code path from a chat
+# message to a real order, so there's nothing here more sensitive than
+# the read-only GET endpoints it calls into.
+
+
+class ChatRequest(BaseModel):
+    message: str
+    history: list[dict] = []
+
+
+@app.post("/api/agent/chat")
+def agent_chat(payload: ChatRequest) -> dict:
+    if not payload.message.strip():
+        raise HTTPException(status_code=422, detail="message is required")
+
+    turn = interpret_turn(payload.message, payload.history)
+    if turn is None:
+        return {
+            "reply": "I couldn't reach the assistant model right now -- try again in a moment, "
+            "or use the Predict/Explain buttons on the dashboard directly.",
+            "action": "none",
+            "ticker": None,
+            "data": None,
+        }
+
+    ticker = (turn.ticker or "AAPL").upper()
+    data = None
+    reply = turn.reply
+    try:
+        if turn.action == "predict":
+            # period="1y" passed explicitly: predict_ml_signal/explain_ml_signal
+            # are FastAPI route handlers with `Query(default=...)` parameter
+            # defaults -- FastAPI only resolves those into plain values when
+            # invoked through the real request pipeline, not on a direct
+            # Python call like this one, so relying on the default here
+            # would pass the raw Query object through to yfinance instead
+            # of the string "1y" (confirmed live: AttributeError, 'Query'
+            # object has no attribute 'lower').
+            data = predict_ml_signal(ticker=ticker, period="1y")
+            if not reply:
+                reply = f"{ticker}: model predicts {data['predicted_proba_up'] * 100:.1f}% probability of an up day."
+        elif turn.action == "explain":
+            data = explain_ml_signal(ticker=ticker, period="1y")
+            top = data["importances"][0]["feature"] if data["importances"] else None
+            if not reply:
+                reply = f"For {ticker}, the model's top feature right now is {top}." if top else "No importances available."
+        elif turn.action == "status":
+            data = get_ml_signal()
+            if not reply:
+                reply = f"Live model: {data['model_type']}, held-out AUC {data['held_out_auc']:.3f}."
+    except HTTPException as e:
+        data = {"error": e.detail}
+        if not reply:
+            reply = f"Couldn't get that: {e.detail}"
+
+    if not reply:
+        reply = "Not sure how to help with that -- try asking about a prediction, feature importance, or the model's performance."
+
+    return {"reply": reply, "action": turn.action, "ticker": ticker if turn.action != "none" else None, "data": data}
 
 
 @app.get("/api/autonomous/activity")
