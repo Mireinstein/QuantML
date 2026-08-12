@@ -34,10 +34,15 @@ export TF_VAR_alpaca_api_key_id
 export TF_VAR_alpaca_api_secret_key
 export TF_VAR_dashboard_username
 export TF_VAR_dashboard_password
+export TF_VAR_openrouter_api_key
 TF_VAR_alpaca_api_key_id="$(get_var ALPACA_API_KEY_ID)"
 TF_VAR_alpaca_api_secret_key="$(get_var ALPACA_API_SECRET_KEY)"
 TF_VAR_dashboard_username="$(get_var DASHBOARD_USERNAME)"
 TF_VAR_dashboard_password="$(get_var DASHBOARD_PASSWORD)"
+# Optional -- powers the dashboard's trading-assistant chat. Leave unset
+# in .env to deploy without it; terraform's default for this var is "",
+# which leaves the chat pointed at its unreachable-localhost default.
+TF_VAR_openrouter_api_key="$(get_var OPENROUTER_API_KEY)"
 
 missing=()
 [[ -z "$TF_VAR_alpaca_api_key_id" ]] && missing+=("ALPACA_API_KEY_ID")
@@ -52,3 +57,8 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 
 echo "TF_VAR_alpaca_api_key_id, TF_VAR_alpaca_api_secret_key, TF_VAR_dashboard_username, TF_VAR_dashboard_password exported for this shell session (values not printed)."
+if [[ -n "$TF_VAR_openrouter_api_key" ]]; then
+  echo "TF_VAR_openrouter_api_key also exported -- the trading-assistant chat will be enabled."
+else
+  echo "No OPENROUTER_API_KEY in .env -- the trading-assistant chat will stay disabled (this is fine, everything else still deploys normally)."
+fi

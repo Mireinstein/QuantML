@@ -88,6 +88,15 @@ resource "azurerm_container_app" "trader" {
   }
 }
 
+# Only the dashboard exposes the chat (the trader app has no chat
+# endpoint), and only when an OpenRouter key is actually supplied --
+# otherwise these env vars are omitted entirely, leaving
+# tradingagent.py's unreachable-localhost default in place rather than
+# pointing it at OpenRouter with an empty key.
+locals {
+  chat_llm_enabled = var.openrouter_api_key != ""
+}
+
 resource "azurerm_container_app" "dashboard" {
   name                         = "quantml-dashboard"
   container_app_environment_id = azurerm_container_app_environment.env.id
@@ -109,6 +118,13 @@ resource "azurerm_container_app" "dashboard" {
   secret {
     name  = "dashboard-password"
     value = var.dashboard_password
+  }
+  dynamic "secret" {
+    for_each = local.chat_llm_enabled ? [1] : []
+    content {
+      name  = "openrouter-api-key"
+      value = var.openrouter_api_key
+    }
   }
 
   registry {
@@ -150,6 +166,27 @@ resource "azurerm_container_app" "dashboard" {
       env {
         name  = "TRADER_INTERNAL_URL"
         value = "https://${azurerm_container_app.trader.ingress[0].fqdn}"
+      }
+      dynamic "env" {
+        for_each = local.chat_llm_enabled ? [1] : []
+        content {
+          name  = "OPENAI_BASE_URL"
+          value = "https://openrouter.ai/api/v1"
+        }
+      }
+      dynamic "env" {
+        for_each = local.chat_llm_enabled ? [1] : []
+        content {
+          name        = "OPENAI_API_KEY"
+          secret_name = "openrouter-api-key"
+        }
+      }
+      dynamic "env" {
+        for_each = local.chat_llm_enabled ? [1] : []
+        content {
+          name  = "OPENAI_MODEL"
+          value = var.openrouter_model
+        }
       }
     }
     min_replicas = 0

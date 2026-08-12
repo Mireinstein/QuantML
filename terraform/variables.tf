@@ -39,3 +39,21 @@ variable "dashboard_password" {
   type        = string
   sensitive   = true
 }
+
+# Optional: powers the dashboard's trading-assistant chat (tradingagent.py)
+# via OpenRouter's OpenAI-compatible API. Left empty, the dashboard falls
+# back to its unreachable-localhost default and the chat just returns its
+# canned "couldn't reach the assistant" reply -- everything else in this
+# deployment works fine without it.
+variable "openrouter_api_key" {
+  description = "OpenRouter API key (openrouter.ai/keys) for the trading-assistant chat -- optional, leave empty to disable the chat"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "openrouter_model" {
+  description = "OpenRouter model slug for the trading-assistant chat -- free-tier slugs rotate, check openrouter.ai/models for current ones"
+  type        = string
+  default     = "meta-llama/llama-3.3-70b-instruct:free"
+}

@@ -27,14 +27,30 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Literal, Optional
 
 import requests
+from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
-BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
-API_KEY = os.environ.get("OPENAI_API_KEY", "ollama")
-MODEL = os.environ.get("OPENAI_MODEL", "qwen2.5:3b")
+# Loads python/.env if present, same convention as paper_trading.py --
+# harmless no-op if it doesn't exist or the vars are already set.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# OPENAI_BASE_URL/OPENAI_API_KEY/OPENAI_MODEL always win when set explicitly
+# (how the Azure deployment configures this, via terraform). Otherwise, a
+# bare OPENROUTER_API_KEY in .env is enough to point this at OpenRouter
+# locally too, without having to also set the OpenAI-style trio by hand.
+# With neither, this falls back to a local Ollama server.
+_openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+BASE_URL = os.environ.get("OPENAI_BASE_URL") or (
+    "https://openrouter.ai/api/v1" if _openrouter_key else "http://localhost:11434/v1"
+)
+API_KEY = os.environ.get("OPENAI_API_KEY") or _openrouter_key or "ollama"
+MODEL = os.environ.get("OPENAI_MODEL") or (
+    "meta-llama/llama-3.3-70b-instruct:free" if _openrouter_key else "qwen2.5:3b"
+)
 
 Action = Literal["predict", "explain", "status", "none"]
 

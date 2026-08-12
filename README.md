@@ -151,13 +151,23 @@ from the live request itself.
 ### 5b. `python/quantml/tradingagent.py` — trading assistant agent
 
 A multi-turn chat agent, same "LLM proposes, code disposes" architecture
-TenantIQ's renter-side agent used: the LLM (OpenAI-compatible, local
-Ollama by default) reads the conversation and returns one small validated
-JSON object — an action (`predict`, `explain`, `status`, or `none`), a
-ticker, and a draft reply. The server executes that action
-deterministically against the exact same functions the dashboard's own
-Predict/Explain buttons call, then returns the LLM's phrased reply
-alongside the real computed data.
+TenantIQ's renter-side agent used: the LLM (OpenAI-compatible) reads the
+conversation and returns one small validated JSON object — an action
+(`predict`, `explain`, `status`, or `none`), a ticker, and a draft reply.
+The server executes that action deterministically against the exact same
+functions the dashboard's own Predict/Explain buttons call, then returns
+the LLM's phrased reply alongside the real computed data.
+
+Backend resolution (`OPENAI_BASE_URL`/`OPENAI_API_KEY`/`OPENAI_MODEL`, if
+set, always win): with an `OPENROUTER_API_KEY` in `.env` and no explicit
+override, points at OpenRouter's OpenAI-compatible API instead — same
+free key locally and (via `scripts/set_trading_env.sh` → terraform, see
+Deployment) on Azure. With neither set, falls back to a local Ollama
+server. Free OpenRouter model slugs rotate; the deployed default
+(`terraform/variables.tf`'s `openrouter_model`) may need an occasional
+bump -- check openrouter.ai/models for current ones. Free-tier OpenRouter
+models are also rate-limited (20 req/min, 50/day), so the chat can hit a
+wall under repeated use.
 
 **There is no trade action in the schema at all** — not a permission
 check that could be misconfigured, an actual absence in the type
