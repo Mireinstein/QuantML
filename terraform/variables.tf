@@ -13,7 +13,7 @@ variable "image_tag" {
 # The four variables below are never given defaults and are marked
 # sensitive so `terraform plan`/`apply` never print their values. Set
 # them via TF_VAR_* environment variables (see
-# python/scripts/set_azure_trading_env.sh), never by hardcoding a value
+# python/scripts/set_trading_env.sh), never by hardcoding a value
 # here or in a committed .tfvars file.
 
 variable "alpaca_api_key_id" {
