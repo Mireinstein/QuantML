@@ -53,7 +53,7 @@ jobs:
 
       - name: Build the retrained image and smoke-test it -- proves the newly retrained artifact actually builds and serves, not just that the code compiles
         run: |
-          docker build -t quantml-dashboard:retrained .
+          docker build --build-arg TRAIN_ARGS="--real-data --ticker AAPL --period 5y" -t quantml-dashboard:retrained .
           docker run -d -p 8080:8080 --name quantml-retrained quantml-dashboard:retrained
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8080/api/ml-signal > /dev/null; then

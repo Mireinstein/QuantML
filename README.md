@@ -290,14 +290,21 @@ the retrained image the same way `ci.yml` does.
 ## Deployment
 
 **Docker** (`python/Dockerfile`): trains the model at image build time
-(`RUN python3 -m quantml.ml.train`), not at container startup. Training
-loads PyTorch + transformers + scikit-learn together, which needs more
-memory than the serving container carries at runtime — an earlier
+(`RUN python3 -m quantml.ml.train $TRAIN_ARGS`), not at container startup.
+Training loads PyTorch + transformers + scikit-learn together, which needs
+more memory than the serving container carries at runtime — an earlier
 runtime-training version OOM-crashed on Azure Container Apps' 0.5Gi. Every
 image now starts from an immutable model artifact baked in at build time.
 
+`TRAIN_ARGS` defaults to empty (synthetic, fast, no network call) — a
+plain `docker build` is what `ci.yml`'s smoke test uses on every push,
+since its job is proving the container serves, not that the model is
+good. A real deployment needs the build-arg:
+
 ```bash
-docker build -t quantml-dashboard python/
+docker build -t quantml-dashboard python/                                              # synthetic, fast
+docker build --build-arg TRAIN_ARGS="--real-data --ticker AAPL --period 5y" \
+  -t quantml-dashboard python/                                                          # real data, what's actually deployed
 docker run -p 8080:8080 quantml-dashboard
 ```
 
@@ -325,9 +332,11 @@ terraform apply   # needs ARM_CLIENT_ID / ARM_CLIENT_SECRET / ARM_TENANT_ID /
                    # python/scripts/set_azure_env.sh)
 
 # First apply creates the registry but fails on the Container Apps -- no
-# image in the registry yet. Build and push one:
+# image in the registry yet. Build and push one (--build-arg matters here --
+# omitting it ships a synthetic-trained model):
 az acr build --registry "$(terraform output -raw acr_login_server | cut -d. -f1)" \
-  --image quantml-dashboard:latest ../python/
+  --image quantml-dashboard:latest \
+  --build-arg TRAIN_ARGS="--real-data --ticker AAPL --period 5y" ../python/
 
 terraform apply   # succeeds now that the image exists
 ```
