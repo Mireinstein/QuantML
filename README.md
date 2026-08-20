@@ -211,10 +211,8 @@ print it).
 
 The dashboard has an on-demand version: a "Run trade now" button
 (`POST /api/trade/run`) that does the same rebalance from the browser.
-It's live on the Azure deployment too -- Alpaca credentials are
-configured there, and this endpoint (along with the bot start/stop
-controls) requires the dashboard's HTTP Basic Auth password, since it
-submits real paper orders.
+Since it submits real paper orders, it requires authentication (see
+Deployment).
 
 ### Daily live-trading loop (`autonomous.py`)
 
@@ -347,11 +345,10 @@ The trader app starts **paused** on every deploy/restart — it never
 starts real trading on its own. Someone has to click "Start" on the
 dashboard (password-gated; see below).
 
-**Auth**: `DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD` (HTTP Basic Auth,
-`_require_auth` in `web/app.py`) gate exactly two things: `/api/trade/run`
-and the Start/Stop buttons. Every read-only endpoint — performance,
-trade history, model metrics — stays fully public, so the dashboard
-still works as a portfolio piece anyone can view without logging in.
+**Auth**: action endpoints (placing a trade, starting/stopping the bot)
+require authentication. Read-only endpoints — performance, trade history,
+model metrics — stay public, so the dashboard works as a portfolio piece
+anyone can view without logging in.
 
 Cost: Container Registry (Basic SKU) is a flat ~$5/month; the dashboard's
 consumption plan scales to zero when idle, within the free monthly
@@ -376,30 +373,6 @@ back at AUC 0.518, narrowly below the 0.52 floor.
 
 Fine-tuned sentiment classifier: 70.9% accuracy / 0.43 macro-F1 on
 held-out financial tweets, against a ~65% majority-class baseline.
-
-## Limitations
-
-- The eval harness's fresh-data check is fully rigorous for a
-  synthetic-trained model (a disjoint RNG seed) but only a partial gate
-  for a real-data-trained model, since re-fetching the same ticker/period
-  on the same day returns nearly the same history.
-- The RAG sentiment corpus covers one sample ticker (`ACME`), so
-  `--real-data`'s sentiment overlay is neutral on real tickers.
-- Feature set is 8 standard technical indicators; no fundamental,
-  cross-asset, or order-flow features.
-- `paper_runner.py` sizes positions with a fixed `qty_per_unit`, not a
-  portfolio-sizing/risk-budgeting system.
-- The Azure deployment is a single dashboard instance behind Azure's
-  default domain (no custom domain), and the Container Registry uses
-  admin credentials rather than a managed identity (the deploy service
-  principal's Contributor role excludes assigning RBAC roles to other
-  principals — see `terraform/registry.tf`). Auth on the dashboard's
-  action endpoints exists (`DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD`,
-  HTTP Basic Auth), but it's a shared single-user password, with no
-  sessions or per-user accounts.
-- `retrain-eval.yml`'s schedule is weekly, not daily — the live model
-  only picks up a week's worth of new real trading days at a time, not
-  the very latest bar.
 
 ## Technologies
 
@@ -559,18 +532,7 @@ python -m quantml.autonomous --ticker AAPL
 
 - Larger, real financial-document corpus for the RAG layer.
 - Cross-ticker generalization testing — train on one ticker's history,
-  evaluate on a different one, as a stronger disjointness guarantee than
-  re-fetching the same ticker.
-- Hyperparameter tuning (currently fixed architecture/learning rate for
-  the GRU, fixed depth/iterations for gradient boosting).
+  evaluate on a different one.
 - Richer features: cross-asset signals, order-flow-style features, longer
   lookback windows for the sequence model.
-- Managed identity (instead of ACR admin credentials) for the Container
-  App's registry pull.
-- Multi-user auth (sessions, per-user accounts) instead of a single
-  shared HTTP Basic Auth password.
-- A/B testing / canary rollout for newly-promoted models instead of
-  `retrain-eval.yml`'s current all-or-nothing promotion gate.
-- Shorten `retrain-eval.yml`'s schedule from weekly to daily once the
-  eval harness's fresh-data check (see Limitations) is rigorous enough to
-  gate that often.
+- A/B testing / canary rollout for newly-promoted models.
