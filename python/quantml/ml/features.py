@@ -15,11 +15,14 @@ FEATURE_COLUMNS = [
     "return_1d",
     "return_5d",
     "return_10d",
+    "return_20d",
     "volatility_20d",
     "ma_ratio_10_50",
     "rsi_14",
     "volume_change_5d",
     "high_low_range",
+    "macd_hist",
+    "bollinger_pct_b",
 ]
 LABEL_COLUMN = "next_day_up"
 
@@ -35,6 +38,32 @@ def _rsi(close: pd.Series, window: int = 14) -> pd.Series:
     return rsi.fillna(50.0)  # neutral when there's no loss to divide by yet
 
 
+def _macd_hist(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+    """MACD histogram (MACD line minus its signal line), expressed as a
+    fraction of price so it's on the same relative scale as the other
+    return-based features (and comparable across tickers at very
+    different price levels -- relevant now that eval_harness.py can
+    cross-check a model against a different ticker's data)."""
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    return (macd_line - signal_line) / close
+
+
+def _bollinger_pct_b(close: pd.Series, window: int = 20, n_std: float = 2.0) -> pd.Series:
+    """%B: where price sits within its rolling Bollinger Band, in [0, 1]
+    under normal conditions (0 = at the lower band, 1 = at the upper band;
+    can go slightly outside that range on a sharp move). A 0.5 fallback
+    when the bands have zero width (flat price -- no real position to
+    report) matches rsi_14's neutral-fallback convention above."""
+    ma = close.rolling(window).mean()
+    std = close.rolling(window).std()
+    upper = ma + n_std * std
+    lower = ma - n_std * std
+    return ((close - lower) / (upper - lower).replace(0, np.nan)).fillna(0.5)
+
+
 def build_features(prices: pd.DataFrame) -> pd.DataFrame:
     """Returns a DataFrame indexed like `prices`, with FEATURE_COLUMNS
     (early rows that don't have enough history for the longest rolling
@@ -46,6 +75,7 @@ def build_features(prices: pd.DataFrame) -> pd.DataFrame:
     features["return_1d"] = returns
     features["return_5d"] = close.pct_change(5)
     features["return_10d"] = close.pct_change(10)
+    features["return_20d"] = close.pct_change(20)
     features["volatility_20d"] = returns.rolling(20).std()
     ma10 = close.rolling(10).mean()
     ma50 = close.rolling(50).mean()
@@ -54,6 +84,8 @@ def build_features(prices: pd.DataFrame) -> pd.DataFrame:
     volume = prices["volume"]
     features["volume_change_5d"] = volume / volume.rolling(5).mean() - 1
     features["high_low_range"] = (prices["high"] - prices["low"]) / close
+    features["macd_hist"] = _macd_hist(close)
+    features["bollinger_pct_b"] = _bollinger_pct_b(close)
 
     return features.dropna()
 

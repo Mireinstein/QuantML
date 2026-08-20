@@ -43,3 +43,21 @@ def test_last_row_is_dropped_since_it_has_no_next_day(prices):
 def test_rsi_is_bounded_zero_to_hundred(prices):
     features = build_features(prices)
     assert features["rsi_14"].between(0, 100).all()
+
+
+def test_bollinger_pct_b_has_no_nans_and_reasonable_range(prices):
+    features = build_features(prices)
+    assert not features["bollinger_pct_b"].isna().any()
+    # Normally in [0, 1] (price between the bands); a sharp move can push
+    # it briefly outside that, but not wildly -- catches a broken
+    # band-width divide before it silently degrades the model.
+    assert features["bollinger_pct_b"].between(-2, 3).all()
+
+
+def test_macd_hist_has_no_nans_and_is_scaled_by_price(prices):
+    features = build_features(prices)
+    assert not features["macd_hist"].isna().any()
+    # Expressed as a fraction of price (see _macd_hist's docstring), so it
+    # should sit in roughly the same order of magnitude as the other
+    # return-based features, not raw price-difference units.
+    assert features["macd_hist"].abs().max() < 1.0

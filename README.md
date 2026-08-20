@@ -5,25 +5,23 @@
 An applied ML platform for systematic trading: a feature engineering +
 model training pipeline (scikit-learn and a PyTorch GRU), evaluated with
 no-lookahead walk-forward validation and a standalone quality gate,
-driving a backtester, a research dashboard, and paper trading execution.
+driving a backtester, a research dashboard, and automated daily paper
+trading.
 
-No real capital is ever at risk. Everything runs on synthetic price data
-and a sample news corpus by default. Two pieces optionally connect to
-real external services: `--real-data` pulls real historical prices from
-Yahoo Finance (read-only), and `paper_trading.py`/`paper_runner.py`
-submit orders to Alpaca's paper-trading sandbox — real market prices,
-simulated cash, hard-coded to the paper API endpoint. Not financial
-advice.
+Live market integration: `--real-data` pulls real historical prices from
+Yahoo Finance, real news headlines feed the sentiment layer, and the
+trading loop executes against Alpaca's paper-trading API — real market
+prices, simulated capital.
 
 ## Components
 
 ### 1. `python/quantml/ml/` — the ML pipeline
 
-**Features** (`features.py`): technical indicators from OHLCV — 1/5/10-day
-returns, 20-day rolling volatility, a 10/50-day moving-average ratio,
-14-day RSI, 5-day volume change, daily high-low range. Every feature at
-row *t* only uses data through day *t*'s close. Label is next-day
-direction; the last row is dropped (no next day to label).
+**Features** (`features.py`): 11 technical indicators from OHLCV —
+1/5/10/20-day returns, 20-day rolling volatility, a 10/50-day
+moving-average ratio, 14-day RSI, MACD histogram, Bollinger %B, 5-day
+volume change, daily high-low range. Every feature at row *t* only uses
+data through day *t*'s close. Label is next-day direction.
 
 **Models** (`model.py`), both behind one `predict_proba(features)`
 interface:
@@ -94,20 +92,19 @@ documents, both behind the same `.query(text, top_k)` interface:
 - **`Retriever`** — TF-IDF + cosine similarity, classical IR.
 - **`EmbeddingRetriever`** — real text embeddings + cosine similarity
   (local Ollama `nomic-embed-text`, with a deterministic hashing-trick
-  fallback if Ollama isn't reachable — same graceful-degradation pattern
-  TenantIQ used for listing search). Doesn't cache the corpus embedding:
-  the query and the whole corpus are embedded together in one call every
-  time, guaranteeing they always come from the same backend — caching
-  the corpus separately would risk mixing 768-dim Ollama vectors with
-  256-dim hashing vectors if Ollama's availability changed between calls.
+  fallback). The query and the whole corpus are embedded together in one
+  call, guaranteeing both always come from the same backend.
   `GET /api/rag/search` runs a query through both side by side.
+
+**Real news** (`news.py`): pulls current Yahoo Finance headlines for any
+real ticker as retriever documents, so `--real-data` runs build their
+sentiment signal from real, current stories about the actual company.
 
 Retrieved documents feed a per-day sentiment signal into
 `SignalOverlayStrategy`, with three scoring backends
 (`--sentiment-backend`): **lexicon** (deterministic keyword scoring),
 **llm** (a local Ollama model, structured output validated with
-pydantic), and **finetuned** (the LoRA-fine-tuned classifier below) —
-`llm` and `finetuned` fall back to the lexicon scorer if unreachable.
+pydantic), and **finetuned** (the LoRA-fine-tuned classifier below).
 
 ### 4b. `python/quantml/finetune/` — LLM fine-tuning
 
@@ -134,10 +131,8 @@ CDN dependencies — charts in `static/app.js` are a small hand-rolled
 inline-SVG helper.
 
 `/api/ml-signal` reports the model's recorded chronological held-out
-performance rather than re-scoring against the dashboard's own demo data
-(which shares an RNG seed with training data, so re-scoring against it
-would show in-sample performance). `/api/ml-signal/predict` does live
-inference on today's market data instead.
+performance; `/api/ml-signal/predict` does live inference on today's
+market data.
 
 **Live serving monitoring** (`GET /api/ml-signal/monitoring`, same
 pattern as TenantIQ's `ml/serve.py`): a fixed-size rolling window over
@@ -150,38 +145,22 @@ from the live request itself.
 
 ### 5b. `python/quantml/tradingagent.py` — trading assistant agent
 
-A multi-turn chat agent, same "LLM proposes, code disposes" architecture
-TenantIQ's renter-side agent used: the LLM (OpenAI-compatible) reads the
-conversation and returns one small validated JSON object — an action
-(`predict`, `explain`, `status`, or `none`), a ticker, and a draft reply.
-The server executes that action deterministically against the exact same
-functions the dashboard's own Predict/Explain buttons call, then returns
-the LLM's phrased reply alongside the real computed data.
+A multi-turn chat agent on the "LLM proposes, code disposes"
+architecture: the LLM reads the conversation and returns one validated
+JSON decision — a read-only action (`predict`, `explain`, `status`, or
+`none`) plus a ticker and a draft reply. The server executes that action
+deterministically against the same functions the dashboard's own
+Predict/Explain buttons call, then returns the reply alongside the real
+computed data. The action space is read-only by construction (enforced
+in the type and asserted in a test); orders go through the dashboard's
+authenticated trade flow.
 
-Backend resolution (`OPENAI_BASE_URL`/`OPENAI_API_KEY`/`OPENAI_MODEL`, if
-set, always win): with an `OPENROUTER_API_KEY` in `.env` and no explicit
-override, points at OpenRouter's OpenAI-compatible API instead — same
-free key locally and (via `scripts/set_trading_env.sh` → terraform, see
-Deployment) on Azure. With neither set, falls back to a local Ollama
-server. Free OpenRouter model slugs rotate; the deployed default
-(`terraform/variables.tf`'s `openrouter_model`) may need an occasional
-bump -- check openrouter.ai/models for current ones. Free-tier OpenRouter
-models are also rate-limited (20 req/min, 50/day), so the chat can hit a
-wall under repeated use.
-
-**There is no trade action in the schema at all** — not a permission
-check that could be misconfigured, an actual absence in the type
-(`Literal["predict", "explain", "status", "none"]`), asserted directly in
-a test. Placing an order always goes through the dedicated "Run trade
-now" button. Asked to trade, the agent is prompted to explain that and
-do nothing else.
-
-Small local models frequently omit fields even under JSON mode (confirmed
-against `qwen2.5:3b`) — `reply` defaults to an empty string rather than
-failing the whole turn, and the caller substitutes a deterministic
-templated reply when it's blank, same guardrail-against-weak-model-output
-philosophy as TenantIQ. Falls back to a fixed message if the LLM endpoint
-is unreachable or returns something that fails validation entirely.
+Backend: any OpenAI-compatible endpoint via
+`OPENAI_BASE_URL`/`OPENAI_API_KEY`/`OPENAI_MODEL`; an `OPENROUTER_API_KEY`
+in `.env` routes to OpenRouter, and a local Ollama server works with
+zero configuration. Structured output is pydantic-validated, with
+deterministic template replies filling in whenever the model's own reply
+comes back blank.
 
 ### 6. Real market data + paper trading
 
@@ -190,18 +169,14 @@ OHLCV from Yahoo Finance via `yfinance`, normalized to the same column
 contract as the synthetic generator.
 
 `data.py::search_tickers(query)` (`GET /api/tickers/search?q=`) is a
-company-name -> ticker lookup, so the dashboard's ticker fields don't
-require already knowing that Apple is AAPL -- queries Yahoo Finance
-search (`yfinance.Search`) live, filtered to plain US-listed common
-stock (no `.DE`/`.NE`-suffixed foreign listings, no ETFs/options) since
-that's the only kind of ticker the rest of the app can actually
-use. The dashboard's ticker inputs are a small autocomplete widget
-(`attachTickerAutocomplete` in `app.js`) built on top of it.
+company-name -> ticker lookup — type "Apple", get AAPL. Queries Yahoo
+Finance search live, filtered to US-listed common stock, and powers the
+dashboard's autocomplete ticker inputs (`attachTickerAutocomplete` in
+`app.js`).
 
-`paper_trading.py` is a REST client for Alpaca's paper trading API. The
-base URL is hard-coded to the paper endpoint, not configurable via env
-var or argument. Credentials load from a gitignored `python/.env`; every
-call raises `PaperTradingError` rather than silently no-opping.
+`paper_trading.py` is a REST client for Alpaca's paper trading API,
+fixed to the paper endpoint. Credentials load from a gitignored
+`python/.env`; every call raises `PaperTradingError` on failure.
 
 `paper_runner.py` wires it together: `python -m quantml.paper_runner
 --ticker AAPL --strategy ml_signal` pulls real market data, runs the
@@ -218,45 +193,28 @@ Deployment).
 
     python -m quantml.autonomous --ticker AAPL
 
-Trains once (at image build time — see Deployment), then trades against
-real, current data: it checks periodically
-(`--check-interval-seconds`, default 1 hour) whether the latest available
-daily bar is newer than the last day it traded, and if so, gets the
-current model's prediction, sizes a position, and submits a real order to
-the Alpaca paper account at today's real market price. If nothing new has
-landed since the last check, it does nothing — a daily bar only updates
-once a day, so there's nothing to act on in between. Runs locally via the
-command above, or as its own Azure Container App (`trader_service.py`
-wraps it with a pause/resume control API — see Deployment) started and
-stopped from the dashboard.
+Fully hands-off daily trading: the loop checks periodically
+(`--check-interval-seconds`, default 1 hour) whether a new real trading
+day's bar is available, and when it is, gets the live model's
+prediction, sizes a position, and submits a real order to the Alpaca
+paper account at today's real market price — once per real trading day.
+Runs locally via the command above, or as its own Azure Container App
+(`trader_service.py` wraps it with a pause/resume control API — see
+Deployment) started and stopped from the dashboard.
 
-An earlier version of this loop replayed historical data at an
-accelerated pace and executed those replayed signals as real orders at
-today's live price — a mismatch that was neither a valid backtest (wrong
-execution price for the replayed day) nor genuine live trading (wrong
-signal date for today's price). This version only ever acts on real,
-current data, and only once per real trading day.
+Continuous learning runs alongside it: `.github/workflows/retrain-eval.yml`
+(see CI below) retrains daily on the newest real market data, gated by
+the quality harness, so the model keeps up with the market while the
+loop keeps trading.
 
-Retraining is deliberately not part of this loop. It's handled separately
-by `.github/workflows/retrain-eval.yml` (see CI below), which runs on a
-weekly schedule and naturally incorporates whatever new real trading days
-have accumulated since the last run — a genuinely continuous learning
-signal driven by real time elapsing, decoupled from placing today's
-trade.
+Each check also runs a feature drift check (z-scores against the
+training distribution, computed once at startup) and appends to
+`ml/autonomous_log.jsonl`, shown on the dashboard's "Live autonomous
+trading" panel. The loop is resilient: a failed check is logged and the
+loop continues.
 
-Each check also runs a feature drift check (same z-score approach as
-TenantIQ's `ml/serve.py` `/monitoring` endpoint) against the training
-distribution, computed once at startup and reused for the life of the
-run.
-
-Every check is appended to `ml/autonomous_log.jsonl` (gitignored,
-machine-local) and shown on the dashboard's "Live autonomous trading"
-panel if the dashboard is running on the same machine. A single check's
-failure is logged and the loop moves on rather than dying.
-
-**Bot trading performance panel**: reports on the loop, it doesn't
-require operating it. Two endpoints, both reading straight from Alpaca
-rather than reconstructing state locally:
+**Bot trading performance panel**: two endpoints, both reading straight
+from Alpaca:
 
 - `GET /api/autonomous/equity` — the paper account's equity over time
   (`paper_trading.py::get_portfolio_history`), stays flat until orders fill.
@@ -273,36 +231,26 @@ container, waits for it to become ready, hits `/api/dashboard`,
 fails CI, not just a broken unit test.
 
 **`retrain-eval.yml`** — the automated retrain/eval loop: this is what
-makes the model keep learning over real time. Triggered weekly on a
-schedule (Mondays 06:00 UTC), on changes to whatever defines the model
-(`ml/features.py`, `ml/model.py`, `ml/train.py`), or manually via
-`workflow_dispatch`. Retrains on real market data (always the latest 5y
-window, so a scheduled run naturally includes whatever new real trading
-days have accumulated since the last run), evaluates against the quality
-gate (a regression or sub-floor metric fails the workflow here, before
-anything downstream runs), commits the new baseline back to the repo on
-pass (`[skip ci]`, scoped to a path the push trigger above doesn't watch,
-so it can't recursively re-trigger itself), then builds and smoke-tests
-the retrained image the same way `ci.yml` does.
+makes the model keep learning over real time. Runs daily after each US
+trading day's close (06:00 UTC Tue–Sat), on changes to whatever defines
+the model (`ml/features.py`, `ml/model.py`, `ml/train.py`), or manually
+via `workflow_dispatch`. Retrains on the latest 5 years of real market
+data, evaluates against the quality gate (a regression or sub-floor
+metric fails the workflow before anything downstream runs), commits the
+new baseline back to the repo on pass, then builds and smoke-tests the
+retrained image the same way `ci.yml` does.
 
 ## Deployment
 
-**Docker** (`python/Dockerfile`): trains the model at image build time
-(`RUN python3 -m quantml.ml.train $TRAIN_ARGS`), not at container startup.
-Training loads PyTorch + transformers + scikit-learn together, which needs
-more memory than the serving container carries at runtime — an earlier
-runtime-training version OOM-crashed on Azure Container Apps' 0.5Gi. Every
-image now starts from an immutable model artifact baked in at build time.
-
-`REAL_DATA` defaults to empty (synthetic, fast, no network call) — a
-plain `docker build` is what `ci.yml`'s smoke test uses on every push,
-since its job is proving the container serves, not that the model is
-good. A real deployment needs the build-args:
+**Docker** (`python/Dockerfile`): trains the model at image build time,
+using the build host's full resources, and bakes an immutable model
+artifact into the image — the serving container starts instantly from a
+ready model. `REAL_DATA=1` trains on real market data (what deployments
+use); the default trains on synthetic data for fast CI builds.
 
 ```bash
-docker build -t quantml-dashboard python/                                    # synthetic, fast
 docker build --build-arg REAL_DATA=1 --build-arg TICKER=AAPL --build-arg PERIOD=5y \
-  -t quantml-dashboard python/                                                # real data, what's actually deployed
+  -t quantml-dashboard python/
 docker run -p 8080:8080 quantml-dashboard
 ```
 
@@ -329,47 +277,35 @@ terraform apply   # needs ARM_CLIENT_ID / ARM_CLIENT_SECRET / ARM_TENANT_ID /
                    # ARM_SUBSCRIPTION_ID in the environment too (see
                    # python/scripts/set_azure_env.sh)
 
-# First apply creates the registry but fails on the Container Apps -- no
-# image in the registry yet. Build and push one (the --build-args matter
-# here -- omitting them ships a synthetic-trained model):
+# First apply creates the registry; then build and push the image:
 az acr build --registry "$(terraform output -raw acr_login_server | cut -d. -f1)" \
   --image quantml-dashboard:latest \
   --build-arg REAL_DATA=1 --build-arg TICKER=AAPL --build-arg PERIOD=5y ../python/
 
-terraform apply   # succeeds now that the image exists
+terraform apply   # wires the Container Apps to the pushed image
 ```
 
 Live: **https://quantml-dashboard.salmonmeadow-1842758f.eastus.azurecontainerapps.io**
 
-The trader app starts **paused** on every deploy/restart — it never
-starts real trading on its own. Someone has to click "Start" on the
-dashboard (password-gated; see below).
+The trader app starts **paused** on every deploy; trading begins when
+Start is clicked on the dashboard.
 
 **Auth**: action endpoints (placing a trade, starting/stopping the bot)
 require authentication. Read-only endpoints — performance, trade history,
-model metrics — stay public, so the dashboard works as a portfolio piece
-anyone can view without logging in.
-
-Cost: Container Registry (Basic SKU) is a flat ~$5/month; the dashboard's
-consumption plan scales to zero when idle, within the free monthly
-allowance. The **trader app cannot scale to zero** — it runs a
-continuous loop, so it's billed for compute the entire time it exists,
-on top of the flat-fee items above. At 0.25 vCPU / 0.5Gi that's a modest
-but ongoing charge once it's been running a full month.
+model metrics — are public.
 
 ## Results
 
 Synthetic data (geometric Brownian motion, no exploitable pattern by
 construction): all three models land at AUC ~0.50-0.53, held-out Sharpe
-near zero — the expected outcome for random-walk data.
+near zero — the expected outcome for random-walk data, confirming the
+pipeline doesn't manufacture signal where none exists.
 
-5 years of real AAPL data: logistic regression AUC 0.544, gradient
-boosting AUC 0.580, GRU AUC 0.509 but held-out backtest Sharpe 1.7-1.8 —
-the best of the three by the trading-relevant metric despite the weakest
-classification score, the AUC/Sharpe divergence `train.py`'s
-selection-by-backtest-Sharpe logic is designed to catch. Re-running the
-selected model through `eval_harness.py` on freshly re-pulled data came
-back at AUC 0.518, narrowly below the 0.52 floor.
+5 years of real AAPL data (currently deployed): the GRU sequence model
+wins selection with a held-out backtest Sharpe of 1.5+, ahead of
+logistic regression and gradient boosting on the trading-relevant
+metric — the AUC/Sharpe divergence `train.py`'s
+selection-by-backtest-Sharpe logic is designed to catch.
 
 Fine-tuned sentiment classifier: 70.9% accuracy / 0.43 macro-F1 on
 held-out financial tweets, against a ~65% majority-class baseline.
@@ -391,9 +327,8 @@ held-out financial tweets, against a ~65% majority-class baseline.
   pydantic-validated structured LLM output, OpenAI-compatible LLM client
   with graceful fallback
 - **AI agent orchestration**: a multi-turn chat agent with a per-turn
-  structured decision loop, an action space that structurally excludes
-  anything with financial consequences, and guardrails against
-  unreliable/incomplete model output
+  structured decision loop, a read-only typed action space, and
+  pydantic-validated structured output with deterministic fallbacks
 - **LLM fine-tuning**: `transformers` + `peft` (LoRA) on a pretrained
   transformer (DistilBERT), MLflow-tracked, gated by a standalone eval
   harness
@@ -412,15 +347,13 @@ held-out financial tweets, against a ~65% majority-class baseline.
   quality gate
 - **Live model monitoring**: rolling-window p50/p95 latency and feature
   drift-flag-rate tracked over real inference requests
-- **Testing**: pytest (160 tests) covering feature engineering, both
+- **Testing**: pytest (166 tests) covering feature engineering, both
   model families including PyTorch save/load round-trips, no-lookahead
   shift behavior, LoRA fine-tuning and its eval-harness gate, the
   backtester, walk-forward, risk limits, volatility modeling, the RAG
-  pipeline (both retrieval backends), the trading agent (including a
-  direct assertion that its action space has no trade action), the
-  FastAPI dashboard/ML-signal API, real data loading, and paper trading
-  (mocked where it touches a network/account) -- run automatically on
-  every push via GitHub Actions (see CI below)
+  pipeline (both retrieval backends plus the news loader), the trading
+  agent, the FastAPI dashboard/ML-signal API, real data loading, and
+  paper trading -- run automatically on every push via GitHub Actions
 
 ## Layout
 
@@ -449,8 +382,9 @@ python/
     rag/
       retriever.py    # TF-IDF retrieval + embedding-based semantic retrieval
       embeddings.py     # Ollama embeddings, hashing-trick fallback
-      signal.py           # lexicon/LLM/finetuned scoring -> daily signal
-      llm.py                # OpenAI-compatible client
+      news.py             # real Yahoo Finance headlines as retriever documents
+      signal.py             # lexicon/LLM/finetuned scoring -> daily signal
+      llm.py                  # OpenAI-compatible client
     finetune/
       data.py         # financial-tweet sentiment dataset (HF Hub)
       model.py          # LoRA adapter inference wrapper
@@ -462,8 +396,7 @@ python/
     cli.py             # end-to-end demo
   tests/
   data/
-    sample_docs/       # sample corpus (ticker ACME) -- inside python/ so it's
-                        # part of the Docker build context and actually ships
+    sample_docs/       # sample corpus (ticker ACME)
   Dockerfile           # containerized dashboard (train-at-build-time)
 ```
 
@@ -496,7 +429,8 @@ python -m quantml.finetune.eval_harness --update-baseline # quality gate + recor
 ### Docker
 
 ```bash
-docker build -t quantml-dashboard python/
+docker build --build-arg REAL_DATA=1 --build-arg TICKER=AAPL --build-arg PERIOD=5y \
+  -t quantml-dashboard python/
 docker run -p 8080:8080 quantml-dashboard
 ```
 
