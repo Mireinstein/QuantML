@@ -118,7 +118,13 @@ def train_candidates(prices) -> tuple[dict, "pd.Timestamp"]:
 
 def select_best(candidates: dict) -> tuple[str, object, float, dict]:
     # Selection metric: held-out Sharpe, not AUC -- see module docstring.
-    best_name = max(candidates, key=lambda name: candidates[name][2]["sharpe"])
+    # Restricted to candidates whose held-out AUC clears the eval
+    # harness's floor (0.50, chance level), so selection can't pick a
+    # model the downstream quality gate would immediately reject for
+    # being worse than a coin flip. Falls back to all candidates if none
+    # clear it -- the gate then fails, correctly, on the best available.
+    eligible = {name: c for name, c in candidates.items() if c[1] >= 0.50} or candidates
+    best_name = max(eligible, key=lambda name: eligible[name][2]["sharpe"])
     best_model, best_auc, best_bt = candidates[best_name]
     return best_name, best_model, best_auc, best_bt
 

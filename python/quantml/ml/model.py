@@ -117,6 +117,10 @@ class TorchSignalModel:
         sequences, idx = _make_sequences(X, self.window)
         labels = y.reindex(idx).to_numpy(dtype=np.float32)
 
+        # Seeded init: an unseeded GRU trains to a different model every
+        # run, which made train.py's model selection (and therefore the
+        # retrain workflow's gate outcome) nondeterministic run to run.
+        torch.manual_seed(42)
         self.net = GRUClassifier(n_features=len(FEATURE_COLUMNS), hidden_size=self.hidden_size)
         optimizer = torch.optim.Adam(self.net.parameters(), lr=self.lr)
         loss_fn = nn.BCEWithLogitsLoss()
