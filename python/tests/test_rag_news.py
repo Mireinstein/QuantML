@@ -79,3 +79,7 @@ def test_news_documents_flow_through_build_signal():
     assert len(signal) == 2
     assert signal.loc["2026-08-18"] > 0  # positive-lexicon day
     assert signal.loc["2026-08-17"] < 0  # negative-lexicon day
+
+    # Ticker matching is case-insensitive -- `--ticker nvda` must produce
+    # the same signal, not a silently empty one.
+    assert len(build_signal(docs, tickers=["nvda"])) == 2

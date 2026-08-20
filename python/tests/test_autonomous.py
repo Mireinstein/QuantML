@@ -196,3 +196,60 @@ def test_order_result_shape_matches_paper_trading_contract():
     reads off an OrderResult when logging a submitted order."""
     order = OrderResult(id="abc", symbol="AAPL", qty=5, side="buy", status="accepted")
     assert order.id and order.side == "buy" and order.qty == 5
+
+
+def test_completed_bars_drops_todays_bar_during_market_hours():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    idx = pd.bdate_range(end="2026-08-18", periods=5)
+    features = pd.DataFrame({"x": range(5)}, index=idx)
+
+    mid_session = datetime(2026, 8, 18, 11, 30, tzinfo=ZoneInfo("America/New_York"))
+    assert len(autonomous.completed_bars(features, now_ny=mid_session)) == 4
+
+    after_close = datetime(2026, 8, 18, 16, 10, tzinfo=ZoneInfo("America/New_York"))
+    assert len(autonomous.completed_bars(features, now_ny=after_close)) == 5
+
+    next_day = datetime(2026, 8, 19, 9, 0, tzinfo=ZoneInfo("America/New_York"))
+    assert len(autonomous.completed_bars(features, now_ny=next_day)) == 5
+
+
+def test_sleep_returns_early_when_pause_flag_flips():
+    import threading
+    import time as time_module
+
+    control = autonomous.RunControl(paused=False)
+    threading.Timer(0.2, lambda: setattr(control, "paused", True)).start()
+
+    start = time_module.monotonic()
+    autonomous._sleep(5, control)
+    elapsed = time_module.monotonic() - start
+    assert elapsed < 3  # returned on the flip, not after the full 5s
+
+
+def test_day_is_recorded_as_traded_before_drift_check_runs(trained_model, monkeypatch):
+    """A failure after the order decision (e.g. in the drift check) must
+    not cause the next check to re-run the same day's trade."""
+    prices = trained_model
+    monkeypatch.setattr(autonomous, "load_real_ohlcv", lambda ticker, period="1y": prices)
+    monkeypatch.setattr(autonomous, "get_position", lambda ticker: None)  # noqa: ARG005
+
+    submissions = []
+
+    def _submit(ticker, qty, side):
+        submissions.append((side, qty))
+        return OrderResult(id="1", symbol=ticker, qty=qty, side=side, status="accepted")
+
+    monkeypatch.setattr(autonomous, "submit_market_order", _submit)
+
+    def _drift_raises(*args, **kwargs):  # noqa: ARG001
+        raise ValueError("drift computation blew up")
+
+    monkeypatch.setattr(autonomous, "feature_drift", _drift_raises)
+
+    autonomous.run(ticker="TEST", check_interval_seconds=0, max_checks=2, dry_run=False)
+
+    activity = autonomous.recent_activity()
+    assert len(submissions) <= 1  # never re-traded the same day
+    assert any(a["event"] == "no_new_trading_day" for a in activity)

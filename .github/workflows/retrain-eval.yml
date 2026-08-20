@@ -50,9 +50,12 @@ jobs:
           git diff --cached --quiet || git commit -m "Update ML eval baseline [skip ci]"
           git push
 
-      - name: Build the retrained image and smoke-test it -- proves the newly retrained artifact actually builds and serves, not just that the code compiles
+      - name: Build the retrained image and smoke-test it -- ships the exact artifact that passed the gate above, not a from-scratch retrain the gate never saw
         run: |
-          docker build --build-arg REAL_DATA=1 --build-arg TICKER=AAPL --build-arg PERIOD=5y -t quantml-dashboard:retrained .
+          # Un-ignore the just-gated model artifacts so the Dockerfile
+          # ships them instead of retraining inside the build.
+          sed -i '/quantml\/ml\/model\.joblib/d;/quantml\/ml\/model\.pt/d;/quantml\/ml\/model_metadata\.json/d' .dockerignore
+          docker build -t quantml-dashboard:retrained .
           docker run -d -p 8080:8080 --name quantml-retrained quantml-dashboard:retrained
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8080/api/ml-signal > /dev/null; then

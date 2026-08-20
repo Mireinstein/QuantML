@@ -21,17 +21,17 @@ COPY . .
 # bakes an immutable, reproducible model artifact into the image -- a
 # better practice regardless of the memory constraint that surfaced it.
 #
-# REAL_DATA (empty by default -- synthetic, fast, no network call) is
-# what ci.yml's docker-smoke-test builds with on every push, since its
-# job is "does the container serve," not "is the model good." Real
-# deployments (az acr build, retrain-eval.yml) pass
-# --build-arg REAL_DATA=1 so the artifact that actually ships was trained
-# on real market data -- an earlier version of this Dockerfile always
-# trained on synthetic data regardless of caller, silently disconnecting
-# the real-data training/eval pipeline in retrain-eval.yml from what was
-# actually deployed. Confirmed live: the deployed dashboard's
-# /api/ml-signal reported "data_source": "synthetic" despite
-# retrain-eval.yml training and gating a real-data model every week.
+# If the build context already carries a trained model artifact
+# (quantml/ml/model_metadata.json + its model file), it ships as-is --
+# that's how retrain-eval.yml guarantees the model it just trained and
+# quality-gated is the exact artifact in the image, rather than a
+# from-scratch retrain that the gate never saw. Model artifacts are in
+# .dockerignore, so a plain local/CI build never picks up stray local
+# state; the workflow un-ignores them deliberately after the gate passes.
+#
+# With no artifact present, trains at build time: REAL_DATA=1 trains on
+# real market data (deployments); default is synthetic (fast, no network
+# call -- what ci.yml's per-push smoke test uses).
 #
 # Three separate single-token args, not one free-form TRAIN_ARGS string
 # -- `az acr build --build-arg` reconstructs a command line on its remote
@@ -43,7 +43,9 @@ COPY . .
 ARG REAL_DATA=""
 ARG TICKER="AAPL"
 ARG PERIOD="5y"
-RUN if [ -n "$REAL_DATA" ]; then \
+RUN if [ -f quantml/ml/model_metadata.json ]; then \
+      echo "Using pre-trained model artifact from build context"; \
+    elif [ -n "$REAL_DATA" ]; then \
       python3 -m quantml.ml.train --real-data --ticker "$TICKER" --period "$PERIOD"; \
     else \
       python3 -m quantml.ml.train; \

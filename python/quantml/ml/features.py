@@ -87,7 +87,9 @@ def build_features(prices: pd.DataFrame) -> pd.DataFrame:
     features["macd_hist"] = _macd_hist(close)
     features["bollinger_pct_b"] = _bollinger_pct_b(close)
 
-    return features.dropna()
+    # inf can leak through ratio features (e.g. volume_change_5d when the
+    # rolling mean volume is 0) and would survive dropna() untouched.
+    return features.replace([np.inf, -np.inf], np.nan).dropna()
 
 
 def build_features_and_labels(prices: pd.DataFrame) -> pd.DataFrame:

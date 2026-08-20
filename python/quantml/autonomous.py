@@ -2,28 +2,20 @@
 
     python -m quantml.autonomous --ticker AAPL
 
-Once per real trading day: pulls TODAY's real market data, asks the
+Once per real trading day: pulls the latest real market data, asks the
 CURRENT live model for its prediction, and rebalances the paper account
-to match -- the exact same mechanics as `paper_runner.py`'s single-shot
-script, just run continuously so it doesn't need a human to trigger it
-every day. Checks periodically (`--check-interval-seconds`, default 1
-hour) and simply does nothing if the latest available bar's date hasn't
-changed since the last trade -- a real daily bar only updates once a
-day, so there's nothing new to act on between real trading days.
+to match -- the same mechanics as `paper_runner.py`'s single-shot
+script, run continuously. Checks periodically
+(`--check-interval-seconds`, default 1 hour) and acts only when a new
+COMPLETED daily bar is available: during US market hours yfinance
+includes today's still-in-progress bar, whose "close" is just the
+latest trade price, so that row is excluded until the session has
+closed -- the model was trained exclusively on completed closes, and
+feeding it a partial bar would be a live/train skew.
 
-Retraining deliberately does NOT happen in this loop -- see
-`.github/workflows/retrain-eval.yml`, which retrains on a schedule using
-whatever real data has accumulated since the last run, gated through the
-same `ml/eval_harness.py` check, and is a genuinely separate concern
-from placing today's trade.
-
-An earlier version of this file replayed historical data at an
-accelerated pace instead of waiting on real days, retraining every N
-replayed cycles. That doesn't hold together: it executed a real order at
-TODAY's real market price using a signal computed from a replayed
-historical day -- not a backtest (wrong execution price for that day)
-and not real trading (wrong signal date for today's price). Removed;
-this file now only ever acts on real, current data.
+Retraining runs separately -- see `.github/workflows/retrain-eval.yml`,
+which retrains daily on whatever real data has accumulated, gated
+through the same `ml/eval_harness.py` check.
 """
 from __future__ import annotations
 
@@ -32,7 +24,8 @@ import json
 import threading
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, time as dtime, timezone
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -69,6 +62,34 @@ class RunControl:
     def paused(self, value: bool) -> None:
         with self._lock:
             self._paused = value
+
+
+NYSE_CLOSE = dtime(16, 5)  # 16:00 ET close, small buffer for the final bar to settle
+
+
+def completed_bars(features: pd.DataFrame, now_ny: datetime | None = None) -> pd.DataFrame:
+    """Drops the last row when it's today's still-in-progress bar (its
+    "close" is just the latest trade price mid-session). A bar dated
+    today counts as complete once the NYSE session has closed."""
+    if not len(features):
+        return features
+    if now_ny is None:
+        now_ny = datetime.now(ZoneInfo("America/New_York"))
+    last_date = features.index[-1].date()
+    if last_date == now_ny.date() and now_ny.time() < NYSE_CLOSE:
+        return features.iloc[:-1]
+    return features
+
+
+def _sleep(seconds: int, control: RunControl | None) -> None:
+    """Sleeps in 1s slices, returning early if the pause flag flips --
+    so the dashboard's Start/Stop takes effect within seconds instead of
+    after a full check interval."""
+    initial = control.paused if control is not None else None
+    for _ in range(seconds):
+        time.sleep(1)
+        if control is not None and control.paused != initial:
+            return
 
 
 def _log(event: dict) -> dict:
@@ -156,7 +177,7 @@ def run(
             if not was_paused:
                 _log({"event": "loop_paused"})
                 was_paused = True
-            time.sleep(check_interval_seconds)
+            _sleep(check_interval_seconds, control)
             continue
         if was_paused:
             _log({"event": "loop_resumed"})
@@ -165,10 +186,10 @@ def run(
         try:
             model = load_best_model()
             prices = load_real_ohlcv(ticker, period="1y")
-            features = build_features(prices)
+            features = completed_bars(build_features(prices))
             if len(features) < SEQUENCE_WINDOW:
                 _log({"event": "insufficient_history", "available_days": len(features)})
-                time.sleep(check_interval_seconds)
+                _sleep(check_interval_seconds, control)
                 continue
 
             latest_date = features.index[-1]
@@ -176,7 +197,7 @@ def run(
 
             if latest_date_str == state.get("last_traded_date"):
                 _log({"event": "no_new_trading_day", "latest_date": latest_date_str})
-                time.sleep(check_interval_seconds)
+                _sleep(check_interval_seconds, control)
                 continue
 
             proba_up = float(model.predict_proba(features)[-1])
@@ -203,14 +224,17 @@ def run(
                         # day instead of just waiting for the next one.
                         order_result = {"error": str(e)}
 
+            # Recorded immediately after the order decision -- if the drift
+            # check or logging below failed with this unrecorded, the next
+            # check would re-run the same day's trade.
+            state["last_traded_date"] = latest_date_str
+            _save_state(state)
+
             drift = (
                 feature_drift(features.iloc[-1], reference_features)
                 if reference_features is not None and len(reference_features)
                 else {"max_z_score": None, "drifted_features": {}}
             )
-
-            state["last_traded_date"] = latest_date_str
-            _save_state(state)
 
             _log(
                 {
@@ -228,7 +252,7 @@ def run(
         except Exception as e:  # noqa: BLE001 -- one bad check must not kill the loop
             _log({"event": "check_error", "error": str(e), "traceback": traceback.format_exc()})
 
-        time.sleep(check_interval_seconds)
+        _sleep(check_interval_seconds, control)
 
 
 def main() -> int:

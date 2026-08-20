@@ -65,9 +65,10 @@ def build_signal(
         except ModelNotTrainedError:
             pass  # falls back to lexicon per-document below, same as the llm backend
 
+    wanted = {t.upper() for t in tickers}
     by_date: dict[str, list[float]] = defaultdict(list)
     for doc in docs:
-        if doc.ticker not in tickers:
+        if doc.ticker.upper() not in wanted:
             continue
         score = None
         if backend == "llm":
